@@ -2,6 +2,8 @@
 <html>
 <script lang="javascript" src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script> <!--Sheets JS-->
 <script src="https://d3js.org/d3.v7.min.js"></script>
+<!-- Color Scale -->
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
 <head>
 <title>Page Title</title>
 </head>
@@ -20,7 +22,11 @@
 <input type="checkbox" id="idgimme" name="gimme" onchange="checkbox()">You may run out of memory!<br><br>
 <p>Step 6. Use the "Open" button to select all files of interest. Your browswer will prompt you to save the output file. It's a .xlsx and I hope it fits on your computer!</p>
 <p>CSV File(s): <input multiple type="file" name="fileinput" id="fileinputid" onchange="openBatchCSV()" accept=".csv"/></p>
+<p>Step 7. Load that excel back to me, and I will then plot out every shock as a function of time, independently, for you to look at, with Z-axis flipped so that impact is positive</p>
+<p>XLSX File: <input type="file" name="xlsxinput" id="xlsxinputid" onchange="openOneXLSX()" accept=".xlsx"/></p>
 <p id="rstatus">status:</p>
+<!-- Create a div where the graph will take place -->
+<div id="my_dataviz"></div>
 </body>
 <script>
 
@@ -31,6 +37,121 @@
     var framesize;
     var gthreshold;
     var ignorethreshold = false;
+
+    function openOneXLSX(){
+        var f = event.target.files[0];
+        const reader = new FileReader();
+        reader.onload = function(e){
+            var binaryString = e.target.result;
+            var inputWorkbook = XLSX.read(binaryString, {type: 'binary'});
+            var firstSheetname = inputWorkbook.SheetNames[0];
+            var firstWorksheet = inputWorkbook.Sheets[firstSheetname];
+            var firstJSON = XLSX.utils.sheet_to_json(firstWorksheet, {defval:"0"});
+            plotAll(firstJSON);
+        }
+        reader.readAsBinaryString(f);
+    }
+
+    function plotAll(jsonny){
+        //step 1: figure out the unique file names from the excel file
+        var filenames = [];
+        for(var line = 0; line < jsonny.length; line++){
+            var thisfilename = jsonny[line].filename;
+            if(!filenames.includes(thisfilename)){
+                filenames.push(thisfilename);
+            }
+        }
+        document.getElementById("rstatus").innerHTML += "there are "+filenames.length+" unique file names in this file:";
+        var margin = {top: 10, right: 100, bottom: 30, left: 30},
+            width = 1700 - margin.left - margin.right,
+            height = 700 - margin.top - margin.bottom;
+        // append the svg object to the body of the page
+       
+        //put data into the weird key'd x,y pairings
+        for(var f = 0; f < filenames.length; f++){
+        //for(var f = 0; f < 1; f++){
+            var readydata = [];
+            var subsetdata = jsonny.filter(function(d){ return d.filename == filenames[f]});
+            function readywhich(which){
+                var readyentry = {};
+                readyentry.name = which;
+                readyentry.values = [];
+                for(var t = 0; t < subsetdata.length; t++){
+                    var xypair = {};
+                    xypair.time = t;
+                    xypair.value = subsetdata[t][which];
+                    readyentry.values.push(xypair);
+                }
+                readydata.push(readyentry);
+            }
+            readywhich("maccl");
+            readywhich("xaccl");
+            readywhich("yaccl");
+            readywhich("zaccl");
+            console.log(readydata);
+            var svg = d3.select("#my_dataviz")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform","translate(" + margin.left + "," + margin.top + ")");
+            // A color scale: one color for each group
+            var myColor = d3.scaleOrdinal().domain(filenames).range(d3.schemeSet2);
+            // Add X axis --> it is a date format
+            var x = d3.scaleLinear().domain([0,10000]).range([ 0, width ]);
+            svg.append("g").attr("transform", "translate(0," + height + ")").call(d3.axisBottom(x));
+            // Add Y axis
+            var y = d3.scaleLinear().domain([-20,20]).range([ height, 0 ]);
+            svg.append("g").call(d3.axisLeft(y));
+            // Add the lines
+            var line = d3.line().x(function(d) { return x(+d.time) }).y(function(d) { return y(+d.value) })
+            svg.selectAll("myLines").data(readydata)
+                .enter().append("path")
+                .attr("d", function(d){ return line(d.values) } )
+                .attr("stroke", function(d){ return myColor(d.name) })
+                .style("stroke-width", 1)
+                .style("fill", "none")
+        }
+        
+        
+        
+        /*
+        //step 2: for each file name, we'll create a time vs. acceleration magnitude chart
+        //for(var f = 0; f < filenames.length; f++){
+        
+        var time0 = subsetdata[0].time;
+        var time1 = subsetdata[subsetdata.length-1].time;
+        //TODO: instead of per file, reduce to per event. trigger a new event when the time-step is greater than 5 second between two lines in the file.
+        var ymin  = 0;
+        var ymax  = d3.max(subsetdata, d => d.maccl);
+        var length = subsetdata.length;
+        var svg = getNode("svg");
+        document.body.appendChild(svg);
+        svg.appendChild( getNode('rect', { width:200, height:20, fill:'#ff0000' }) );
+        var edge = 100;
+        var margin = edge*2;
+        //var width = svg.attr("width") - margin;
+        //var height = svg.attr("height") - margin;
+        console.log(filenames[f],time0,time1,ymin,ymax);
+
+        
+        // Reformat the data: we need an array of arrays of {x, y} tuples
+        var dataReady = allGroup.map( function(grpName) { // .map allows to do something for each element of the list
+            return {
+                name: grpName,
+                values: data.map(function(d) {
+                    return {time: d.time, value: +d[grpName]};
+                })
+            };
+        });*/
+    }
+
+    function getNode(n, v) {
+        n = document.createElementNS("http://www.w3.org/2000/svg", n);
+        for (var p in v)
+            n.setAttributeNS(null, p, v[p]);
+        return n
+    }
 
     function checkbox(){
         ignorethreshold = !ignorethreshold;
