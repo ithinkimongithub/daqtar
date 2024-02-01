@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<script lang="javascript" src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script> <!--Sheets JS-->
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<head>
+<title>Page Title</title>
+</head>
+<body>
+<p>Step 1. Use Batch Rename Utility to put "serXXXX" where XXXX is the sensor serial number at the front of the file name for each LOG file</p>
+<p>Step 2. Place all LOG files in a single directory with the logdecoder.exe. In this example, this was "C:\idaq\space\"</p>
+<p>Step 3. Make a new Batch file in this directory with the only line inside: "for %%f in (.\ser*) DO c:\idaq\space\logdecoder.exe %%f"</p>
+<p>Step 4. Execute the Batch file. This should open a terminal and show the logdecoder.exe at work</p>
+<p>Step 5. Use this utility by selecting all your csv's at the same time with the Open command below</p>
+<p>Step 6. Your browswer will prompt you to save the output file. It's a csv too and I hope it fits on your computer!</p>
+<p>CSV File(s): <input multiple type="file" name="fileinput" id="fileinputid" onchange="openBatchCSV()" accept=".csv"/></p>
+<p id="rstatus">status:</p>
+</body>
+<script>
+
+    var curr_file;
+    var num_files;
+    var big_data = [];
+
+    function openBatchCSV(){
+		document.getElementById("rstatus").innerHTML += "opencsv() start,";
+        var str = "20240123-204239";
+        document.getElementById("rstatus").innerHTML += "*"+(str.slice(0,8))+"*";
+        document.getElementById("rstatus").innerHTML += "*"+(str.slice(9))+"*";
+		num_files = event.target.files.length;
+		curr_file = 0;
+        for(var i = 0; i < num_files; i++){
+            openOneCSV(i,event);
+        }
+		document.getElementById("rstatus").innerHTML += "opencsv() done,";
+    }
+
+    function openOneCSV(index, event){
+		document.getElementById("rstatus").innerHTML += "openOnecsv() start,";
+        var f = event.target.files[index];
+        const reader = new FileReader();
+        reader.onload = function(e){
+            document.getElementById("rstatus").innerHTML += "fileReaderStarting,";
+            const text = e.target.result;
+            const data = d3.csvParse(text);
+            var fname = f.name;
+            process_json(data, fname);
+            if(curr_file == num_files - 1){
+            //draw the stuff now:
+                document.getElementById("rstatus").innerHTML += "Last file completed. Starting my drawing.";
+            }
+            curr_file++;
+        };
+        reader.readAsText(f);
+    }
+
+    function process_json(data, filename){
+        //the d3 library offers the map function
+        var sel_data = data.map(
+            ({
+                time, xgyro, ygyro, zgyro, xaccl, yaccl, zaccl, GPSFixMode, GPSDateTime, GPSLongitude, GPSLatitude, GPSGroundSpeed
+            }) =>
+            {
+            return{
+                time, xgyro, ygyro, zgyro, xaccl, yaccl, zaccl, GPSFixMode, GPSDateTime, GPSLongitude, GPSLatitude, GPSGroundSpeed
+                }
+            }
+        );
+        for(var i = 0; i < sel_data.length; i++){
+            //add metadata
+            sel_data[i].filename = filename;
+			//make sure all text is entered as float/int values
+			sel_data[i].time = parseInt(sel_data[i].time);
+			sel_data[i].xgyro = parseFloat(sel_data[i].xgyro);
+            sel_data[i].ygyro = parseFloat(sel_data[i].ygyro);
+            sel_data[i].zgyro = parseFloat(sel_data[i].zgyro);
+            sel_data[i].xaccl = parseFloat(sel_data[i].xaccl);
+            sel_data[i].yaccl = parseFloat(sel_data[i].yaccl);
+            sel_data[i].zaccl = parseFloat(sel_data[i].zaccl);
+            sel_data[i].GPSFixMode = parseInt(sel_data[i].GPSFixMode);
+            //GPSDateTime will remain as text excample 20240123-204239
+            sel_data[i].GPSDate = parseInt(sel_data[i].GPSDateTime.slice(0,8));
+            sel_data[i].GPSTime = parseInt(sel_data[i].GPSDateTime.slice(9));
+            sel_data[i].GPSLongitude = parseFloat(sel_data[i].GPSLongitude);
+            sel_data[i].GPSLatitude = parseFloat(sel_data[i].GPSLatitude);
+            sel_data[i].GPSGroundSpeed = parseFloat(sel_data[i].GPSGroundSpeed);
+        }
+    }
+</script>
