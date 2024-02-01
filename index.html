@@ -20,17 +20,19 @@
     var curr_file;
     var num_files;
     var big_data = [];
+    var linecount;
 
     function openBatchCSV(){
+        linecount = 0;
 		document.getElementById("rstatus").innerHTML += "opencsv() start,";
         var str = "20240123-204239";
         document.getElementById("rstatus").innerHTML += "*"+(str.slice(0,8))+"*";
         document.getElementById("rstatus").innerHTML += "*"+(str.slice(9))+"*";
 		num_files = event.target.files.length;
-		curr_file = 0;
-        for(var i = 0; i < num_files; i++){
-            openOneCSV(i,event);
-        }
+		//curr_file = 0;
+        //for(var i = 0; i < num_files; i++){ //commented out means this is recursive
+            openOneCSV(0,event); 
+        //}
 		document.getElementById("rstatus").innerHTML += "opencsv() done,";
     }
 
@@ -44,9 +46,14 @@
             const data = d3.csvParse(text);
             var fname = f.name;
             process_json(data, fname);
-            if(curr_file == num_files - 1){
+            //if(curr_file == num_files - 1){
+            if(index == num_files - 1){
             //draw the stuff now:
-                document.getElementById("rstatus").innerHTML += "Last file completed. Starting my drawing.";
+                document.getElementById("rstatus").innerHTML += "Last file completed. pulled "+big_data.length+" lines from "+linecount+" total lines";
+                generateTable(big_data,30000);
+            }
+            else{
+                openOneCSV(index+1, event);
             }
             curr_file++;
         };
@@ -54,7 +61,6 @@
     }
 
     function process_json(data, filename){
-        //the d3 library offers the map function
         var sel_data = data.map(
             ({
                 time, xgyro, ygyro, zgyro, xaccl, yaccl, zaccl, GPSFixMode, GPSDateTime, GPSLongitude, GPSLatitude, GPSGroundSpeed
@@ -76,6 +82,8 @@
             sel_data[i].xaccl = parseFloat(sel_data[i].xaccl);
             sel_data[i].yaccl = parseFloat(sel_data[i].yaccl);
             sel_data[i].zaccl = parseFloat(sel_data[i].zaccl);
+            sel_data[i].maccl = Math.sqrt(sel_data[i].xaccl*sel_data[i].xaccl+sel_data[i].yaccl*sel_data[i].yaccl+sel_data[i].zaccl*sel_data[i].zaccl);
+            sel_data[i].active = 0;
             sel_data[i].GPSFixMode = parseInt(sel_data[i].GPSFixMode);
             //GPSDateTime will remain as text excample 20240123-204239
             sel_data[i].GPSDate = parseInt(sel_data[i].GPSDateTime.slice(0,8));
@@ -84,5 +92,83 @@
             sel_data[i].GPSLatitude = parseFloat(sel_data[i].GPSLatitude);
             sel_data[i].GPSGroundSpeed = parseFloat(sel_data[i].GPSGroundSpeed);
         }
+        //threshold finder
+        const lookforward = 1000;
+        const lookbackward = 100;
+        var syson = 0;
+        var decay;
+        const threshold = 2;
+        for(var i = 0; i < sel_data.length; i++){
+            if(sel_data[i].maccl > threshold){
+                sel_data[i].active = 1;
+                decay = lookforward; //whenever other threshold, reset decay counter to the top value.
+                if(syson == 0){ 
+                    //CONDITION: if accel is over threshold and system was idle, go active and also look backward and set active
+                    for(var back = i - lookbackward; back < i; back++){
+                        if(back > 0){
+                            sel_data[i].active = 1;
+                        }
+                    }
+                    syson = 1; //now set to syson to avoid any more lookbacks.
+                }
+            }
+            else{
+                if(syson == 1){
+                    //CONDITION: if accel is under threshold and system was active, do the decay and check if decay hits zero
+                    decay--;
+                    sel_data[i].active = 1;
+                    if(decay == 0){
+                        syson = 0;
+                    }
+                }
+                //else CONDITION: if accel is under threshold and system is off, keep data inactive.
+            }
+        }
+        //store it
+        var filtered = [];
+        for(var i = 0; i < sel_data.length; i++){
+            linecount++;
+            if(sel_data[i].active == 1){
+                var activeitem = {};
+                activeitem = sel_data[i];
+                filtered.push(activeitem);
+                big_data.push(activeitem);
+            }
+        }
+        generateTable(sel_data, 2);
+        //big_data.push(filtered);
     }
+
+    function generateTable(data, maxlines) {
+        // creates a <table> element and a <tbody> element
+        const tbl = document.createElement("table");
+        const tblBody = document.createElement("tbody");
+        if(data.length < 1){
+            console.log("array of length 0");
+        }
+        // creating all cells
+        for (let i = 0;  i < data.length && i < maxlines; i++) {
+            // creates a table row
+            const row = document.createElement("tr");
+
+            for (let key in data[i]) {
+                // Create a <td> element and a text node, make the text
+                // node the contents of the <td>, and put the <td> at
+                // the end of the table row
+                const cell = document.createElement("td");
+                const cellText = document.createTextNode(data[i][key].toString());
+                cell.appendChild(cellText);
+                row.appendChild(cell);
+            }
+            // add the row to the end of the table body
+            tblBody.appendChild(row);
+        }
+        // put the <tbody> in the <table>
+        tbl.appendChild(tblBody);
+        // appends <table> into <body>
+        document.body.appendChild(tbl);
+        // sets the border attribute of tbl to '2'
+        tbl.setAttribute("border", "2");
+    }
+
 </script>
