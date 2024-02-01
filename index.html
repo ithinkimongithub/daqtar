@@ -8,7 +8,7 @@
 <body>
 <p>Step 1. Use Batch Rename Utility to put "serXXXX" where XXXX is the sensor serial number at the front of the file name for each LOG file</p>
 <p>Step 2. Place all LOG files in a single directory with the logdecoder.exe. In this example, this was "C:\idaq\space\"</p>
-<p>Step 3. Make a new Batch file in this directory with the only line inside: "for %%f in (.\ser*) DO c:\idaq\space\logdecoder.exe %%f"</p>
+<p>Step 3. Make a new Batch file (that's text with extension .bat) in this directory with the only line inside: "for %%f in (.\ser*) DO c:\idaq\space\logdecoder.exe %%f"</p>
 <p>Step 4. Execute the Batch file. This should open a terminal and show the logdecoder.exe at work</p>
 <p>Step 5. Modify parameters as you see fit. The G-threshold is the magnitude of the acceleration vector, and framesize
     is how many samples to capture on either side of an event that is over that G-threshold.</p>
@@ -16,7 +16,9 @@
 <input type="number" id="idgthreshold" name="gthreshold" value="3" step="0.1">Decimals allowed<br><br>
 <label for="framesize">Look back/look forward:</label>
 <input type="number" id="idframesize" name="framesize" value="1000" step="1">Whole numbers only<br><br>
-<p>Step 6. Use the "Open" button to select all files of interest. Your browswer will prompt you to save the output file. It's a csv too and I hope it fits on your computer!</p>
+<label for="gimme">Just give me everything:</label>
+<input type="checkbox" id="idgimme" name="gimme" onchange="checkbox()">You may run out of memory!<br><br>
+<p>Step 6. Use the "Open" button to select all files of interest. Your browswer will prompt you to save the output file. It's a .xlsx and I hope it fits on your computer!</p>
 <p>CSV File(s): <input multiple type="file" name="fileinput" id="fileinputid" onchange="openBatchCSV()" accept=".csv"/></p>
 <p id="rstatus">status:</p>
 </body>
@@ -28,6 +30,11 @@
     var linecount;
     var framesize;
     var gthreshold;
+    var ignorethreshold = false;
+
+    function checkbox(){
+        ignorethreshold = !ignorethreshold;
+    }
 
     function openBatchCSV(){
         linecount = 0;
@@ -59,7 +66,8 @@
             if(index == num_files - 1){
             //draw the stuff now:
                 document.getElementById("rstatus").innerHTML += "Last file completed. pulled "+big_data.length+" lines from "+linecount+" total lines";
-                generateTable(big_data,30000);
+                //generateTable(big_data,1000);
+                downloadXLSX(big_data);
             }
             else{
                 openOneCSV(index+1, event);
@@ -72,11 +80,15 @@
     function process_json(data, filename){
         var sel_data = data.map(
             ({
-                time, xgyro, ygyro, zgyro, xaccl, yaccl, zaccl, GPSFixMode, GPSDateTime, GPSLongitude, GPSLatitude, GPSGroundSpeed
+                time, xgyro, ygyro, zgyro, xaccl, yaccl, zaccl, GPSFixMode, GPSDateTime, 
+                //GPSLongitude, GPSLatitude, 
+                GPSGroundSpeed
             }) =>
             {
             return{
-                time, xgyro, ygyro, zgyro, xaccl, yaccl, zaccl, GPSFixMode, GPSDateTime, GPSLongitude, GPSLatitude, GPSGroundSpeed
+                time, xgyro, ygyro, zgyro, xaccl, yaccl, zaccl, GPSFixMode, GPSDateTime, 
+                //GPSLongitude, GPSLatitude, 
+                GPSGroundSpeed
                 }
             }
         );
@@ -100,8 +112,8 @@
             //GPSDateTime will remain as text excample 20240123-204239
             sel_data[i].GPSDate = parseInt(sel_data[i].GPSDateTime.slice(0,8));
             sel_data[i].GPSTime = parseInt(sel_data[i].GPSDateTime.slice(9));
-            sel_data[i].GPSLongitude = parseFloat(sel_data[i].GPSLongitude);
-            sel_data[i].GPSLatitude = parseFloat(sel_data[i].GPSLatitude);
+            //sel_data[i].GPSLongitude = parseFloat(sel_data[i].GPSLongitude);
+            //sel_data[i].GPSLatitude = parseFloat(sel_data[i].GPSLatitude);
             sel_data[i].GPSGroundSpeed = parseFloat(sel_data[i].GPSGroundSpeed);
         }
         //threshold finder
@@ -141,14 +153,17 @@
         //var filtered = [];
         for(var i = 0; i < sel_data.length; i++){
             //linecount++;
-            if(sel_data[i].active == 1){
+            if(sel_data[i].active == 1 || ignorethreshold){
                 var activeitem = {};
                 activeitem = sel_data[i];
                 //filtered.push(activeitem);
                 big_data.push(activeitem);
             }
+            if(i == sel_data.length -1){
+                document.getElementById("rstatus").innerHTML += "File Time (ms): "+sel_data[i].time;
+            }
         }
-        generateTable(sel_data, 2);
+        //generateTable(sel_data, 2);
         //big_data.push(filtered);
     }
 
@@ -184,4 +199,11 @@
         tbl.setAttribute("border", "2");
     }
 
+
+    function downloadXLSX(data) {
+        const worksheet = XLSX.utils.json_to_sheet(data);		
+	    const workbook  = XLSX.utils.book_new();
+	    XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
+	    XLSX.writeFile(workbook, "output.xlsx", {compression:true});
+    }
 </script>
