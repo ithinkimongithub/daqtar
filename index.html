@@ -8,63 +8,76 @@
 <title>Page Title</title>
 </head>
 <body>
-<p>Step 1. Use Batch Rename Utility to put "serXXXX" where XXXX is the sensor serial number at the front of the file name for each LOG file</p>
-<p>Step 2. Place all LOG files in a single directory with the logdecoder.exe. In this example, this was "C:\idaq\space\"</p>
-<p>Step 3. Make a new Batch file (that's text with extension .bat) in this directory with the only line inside: "for %%f in (.\ser*) DO c:\idaq\space\logdecoder.exe %%f"</p>
-<p>Step 4. Execute the Batch file. This should open a terminal and show the logdecoder.exe at work</p>
-<p>Step 5. Modify parameters as you see fit. The G-threshold is the magnitude of the acceleration vector, and framesize
+<p><b>Step 1.</b> Use Batch Rename Utility to put "serXXXX" where XXXX is the sensor serial number at the front of the file name for each LOG file</p>
+<p><b>Step 2.</b> Place all LOG files in a single directory with the logdecoder.exe. In this example, this was "c:\space\"</p>
+<p><b>Step 3.</b> Make a new Batch file (that's text with extension .bat) in the c:\space\ directory with the only line inside: "for %%f in (.\ser*) DO c:\space\logdecoder.exe %%f"</p>
+<p><b>Step 4.</b> Execute the Batch file. This should open a terminal and show the logdecoder.exe at work</p>
+<p><b>Step 5.</b> Modify the following parameters as you see fit. The G-threshold is the magnitude of the acceleration vector, and framesize
     is how many samples to capture on either side of an event that is over that G-threshold.</p>
+<p>
 <label for="gthreshold">G threshold:</label>
-<input type="number" id="idgthreshold" name="gthreshold" value="3" step="0.1">Decimals allowed<br><br>
+<input type="number" id="idgthreshold" name="gthreshold" value="3" step="0.1">
 <label for="framesize">Look back/look forward:</label>
-<input type="number" id="idframesize" name="framesize" value="1000" step="1">Whole numbers only<br><br>
-<label for="gimme">Ignore thresholds, I want everything!</label>
-<input type="checkbox" id="idgimme" name="gimme" onchange="goignorecheckbox()">You may run out of memory!<br><br>
-<label for="gimmemore">Just skip the save/open, take me straight to the chart:</label>
-<input type="checkbox" id="idgimmemore" name="gimmemore" onchange="gochartcheckbox()">Nice shortcut!<br><br>
-<p>Step 6. Use the "Open" button to select all files of interest. Your browswer will prompt you to save the output file. It's a .xlsx and I hope it fits on your computer!</p>
-<p>CSV File(s): <input multiple type="file" name="fileinput" id="fileinputid" onchange="openBatchCSV()" accept=".csv"/></p>
-<p>Step 7. Load that excel back to me, and I will then plot out every shock as a function of time, independently, for you to look at, with Z-axis flipped so that impact is positive</p>
+<input type="number" id="idframesize" name="framesize" value="1000" step="1"><br><br>
+<input type="checkbox" id="idgimme" name="gimme" onchange="checkignorethreshold()"><label for="gimme">Ignore the G-threshold, I want everything.</label></p>
+<p><b>Step 6.</b> Use the "Open" button to select all .csv files of interest and trim down according to criteria above (threshold and look back/forward).</p>
+<p>CSV File(s): <input multiple type="file" name="fileinput" id="fileinputid" onchange="openBatchCSV()" accept=".csv"/>I don't alphabetize for you.</p>
+<p>your input status:<a id="csvstatus"></a></p>
+<button onclick="downloadXLSX()" id="id_download_xlsx" disabled>Download XLSX</button>
+<hr>
+<p><b>Shortcut.</b> If you already have the XLSX, choose the file and we can start from there. If you are using very large files, it is best to save the Excel
+output and then restart your browser anew and then load the XLSX. The garbage collection after the CSV process will otherwise be very slow when it goes into using
+the page file. However, very very large files that cannot even be saved after Step 6 require a snipping tool.</p>
 <p>XLSX File: <input type="file" name="xlsxinput" id="xlsxinputid" onchange="openOneXLSX()" accept=".xlsx"/></p>
-<p id="rstatus">status:</p>
-<!-- Create a div where the graph will take place -->
+<hr>
+<p>Data status:<a id="datastatus"></a></p>
+<hr>
+X-min:<input type="number" id="idxmin" name="namexmin" value="0" step="1000">
+X-max:<input type="number" id="idxmax" name="namexmin" value="1000" step="1000">
+y-Min (G's):<input type="number" id="idymin" name="nameymin" value="-25" step="0.1" >
+y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="0.1" >
+<button onclick="modifyRange()" id="id_draw_button" disabled>Draw</button>
+<p id="pstatus">progress:</p>
+<p>R status:<a id="rstatus"></a></p>
 <div id="my_dataviz"></div>
 </body>
 <script>
 
+    const thelabels = ["maccl","xaccl","yaccl","zaccl"];
+    const thecolors = d3.schemeSet1;
+
     var curr_file;
     var num_files;
-    var big_data = [];
-    var linecount;
+    var big_data = []; //json format, single x value (milliseconds) available to use. 2-Dimensional
+    var linecount = 0;
     var framesize;
     var gthreshold;
-    var ignorethreshold = false;
-    var straighttochart = false;
+    var organized_data = []; //organized by file-index, then event-index, then 0-index on the sample it is.
 
-    function openOneXLSX(){
-        var f = event.target.files[0];
-        const reader = new FileReader();
-        reader.onload = function(e){
-            var binaryString = e.target.result;
-            var inputWorkbook = XLSX.read(binaryString, {type: 'binary'});
-            var firstSheetname = inputWorkbook.SheetNames[0];
-            var firstWorksheet = inputWorkbook.Sheets[firstSheetname];
-            var firstJSON = XLSX.utils.sheet_to_json(firstWorksheet, {defval:"0"});
-            plotAll(firstJSON);
-        }
-        reader.readAsBinaryString(f);
+    var ignorethreshold = false; //ignore threshold and grab everything from the CSV
+    function checkignorethreshold(){
+        ignorethreshold = !ignorethreshold;
+    }
+    var ignoreexcel = false; //don't bother making an xlsx.
+    function checkignoreexcel(){
+        ignoreexcel = !ignoreexcel;
     }
 
-    function plotAll(jsonny){
-        //step 1: figure out the unique file names from the excel file
-        var filenames = [];
-        var fileeventlist = [];
+    var filenames = [];
+    var fileeventlist = [];
+
+    //does basic analysis of big_data, finding unique filenames and where the cut-offs are for each event.
+    function readyize(){
+        //step 1: figure out the unique file names from the json and the events from each file
+        filenames = []; //reset if old
+        fileeventlist = []; //reset if old
         var currmax = 0;
-        for(var line = 0; line < jsonny.length; line++){
-            if(jsonny[line].eventcounter > currmax){
-                currmax = jsonny[line].eventcounter; //rely on structure that event counters reset back to 1 with each new file, so dont need special code at beginning
+        var thisfilename;
+        for(var line = 0; line < big_data.length; line++){
+            if(big_data[line].eventcounter > currmax){
+                currmax = big_data[line].eventcounter; //rely on structure that event counters reset back to 1 with each new file, so dont need special code at beginning
             }
-            var thisfilename = jsonny[line].filename;
+            thisfilename = big_data[line].filename;
             if(!filenames.includes(thisfilename)){
                 filenames.push(thisfilename);
                 if(line > 0){
@@ -73,24 +86,68 @@
                 }
             }
         }
-        fileeventlist.push(currmax); //last line isn't a new file, but still need to store tail and of event counters
-        console.log(filenames, fileeventlist);
+        fileeventlist.push(currmax); //last line isn't a new file, but still need to store tail end of event counters
+        document.getElementById("datastatus").innerHTML = "there are "+filenames.length+" filenames and "+big_data.length+" lines in my data.";
+        
+        //step 2: turn all of the big_data chunks into little chunks for drawing using the filter function
+        organized_data = new Array(filenames.length);
+        for(var f = 0; f < filenames.length; f++){
+            organized_data[f] = new Array(fileeventlist[f]);
+            var subfiledata = big_data.filter(function(d){ return d.filename == filenames[f]});
+            for(var event_id = 1; event_id <= fileeventlist[f]; event_id++){
+                var subsetdata = subfiledata.filter(function(d){ return d.eventcounter == event_id});
+                organized_data[f][event_id] = subsetdata; //I hope this works.                
+            }
+        }
+        document.getElementById("rstatus").innerHTML = "readyized";
+        document.getElementById("id_draw_button").disabled = false;
+        /*
+        plottable_data = []; //cleans up this variable.
+        for(var findex = 0; findex < filenames.length; findex++){
+            var filename = filenames[findex];
+            var plotfile = {};
+            plotfile.events = [];
+            //plottable_data[findex][eventindex].name
+        }
+        for(var param = 0; param < thelabels.length; param++){
+            var entrypair = {};
+                entrypair.name = thelabels[param];
+                entrypair.values = [];
+            for(var i = 0; i < big_data.length; i++){
+                var xypair = {};
+                xypair.time = big_data[i].linecount;
+                xypair.value = big_data[i][thelabels];
+                entrypair.values.push(xypair);
+            }
+            plottable_data.push(entrypair);
+        }
+        console.log(plottable_data);*/
+    }
 
-        document.getElementById("rstatus").innerHTML += "there are "+filenames.length+" unique file names in this file:";
+    function plotAll(jsonny){
+        
         var margin = {top: 10, right: 100, bottom: 30, left: 30},
             width = 1700 - margin.left - margin.right,
             height = 700 - margin.top - margin.bottom;
-        // append the svg object to the body of the page
        
         //put data into the weird key'd x,y pairings
-        const thelabels = ["maccl","xaccl","yaccl","zaccl"];
-        const thecolors = d3.schemeSet2;
-        console.log(thecolors);
+        
         for(var f = 0; f < filenames.length; f++){
-            var subfiledata = jsonny.filter(function(d){ return d.filename == filenames[f]});
-            for(var e = 1; e <= fileeventlist[f]; e++){
+            var subfiledata = big_data.filter(function(d){ return d.filename == filenames[f]});
+            if(ploteverthing){
+                var tstart = document.getElementById("idxmin").value;
+                var tfinish = document.getElementById("idxmax").value;
+                var subfiledata = jsonny.slice(tstart, tfinish);
+                readyizeanddraw(subfiledata, 0);
+            }
+            else{
+                for(var event_id = 1; event_id <= fileeventlist[f]; event_id++){
+                    var subsetdata = subfiledata.filter(function(d){ return d.eventcounter == event_id});
+                    readyizeanddraw(subsetdata, event_id);
+                }
+            }
+            function readyizeanddraw(subsetdata,event_id){
                 var readydata = [];
-                var subsetdata = subfiledata.filter(function(d){ return d.eventcounter == e});
                 var timestamp = subsetdata[0].GPSDateTime;
                 var xmax = subsetdata.length;
                 function readywhich(which){
@@ -109,45 +166,34 @@
                 readywhich("xaccl");
                 readywhich("yaccl");
                 readywhich("zaccl");
-                console.log(readydata);
                 var svg = d3.select("#my_dataviz").append("svg").attr("width", width + margin.left + margin.right)
-                             .attr("height", height + margin.top + margin.bottom).append("g")
-                             .attr("transform","translate(" + margin.left + "," + margin.top + ")");
-                // A color scale: one color for each group
-                var myColor = d3.scaleOrdinal().domain(filenames).range(d3.schemeSet2);
-                // Add X axis --> it is a date format
+                            .attr("height", height + margin.top + margin.bottom).append("g")
+                            .attr("transform","translate(" + margin.left + "," + margin.top + ")");
+                var myColor = d3.scaleOrdinal().domain(thelabels).range(d3.schemeSet1);
                 var x = d3.scaleLinear().domain([0,xmax]).range([ 0, width ]);
                 svg.append("g").attr("transform", "translate(0," + height + ")").call(d3.axisBottom(x));
-                // Add Y axis
                 var y = d3.scaleLinear().domain([-25,25]).range([ height, 0 ]);
                 svg.append("g").call(d3.axisLeft(y));
-                // Add the lines
                 var line = d3.line().x(function(d) { return x(+d.time) }).y(function(d) { return y(+d.value) })
                 svg.selectAll("myLines").data(readydata).enter().append("path").attr("d", function(d){ return line(d.values) } )
                     .attr("stroke", function(d){ return myColor(d.name) }).style("stroke-width", 1).style("fill", "none");
-                // Add the points
                 svg.selectAll("myDots").data(readydata).enter().append('g').style("fill", function(d){ return myColor(d.name) })
-                    // Second we need to enter in the 'values' part of this group
                     .selectAll("myPoints").data(function(d){ return d.values }).enter().append("circle")
                     .attr("cx", function(d) { return x(d.time) } )
                     .attr("cy", function(d) { return y(d.value) } ).attr("r", 2)
                     //.attr("stroke", "white")
-                // Add a legend at the upper left corner
+                //LEGEND
                 svg.append('g').append("text").attr("x",12).attr("y",10).text("File: "+filenames[f]).style("fill","black").style("font-size",18);
-                svg.append('g').append("text").attr("x",12).attr("y",30).text("Event: "+e).style("fill","black").style("font-size",18);
+                svg.append('g').append("text").attr("x",12).attr("y",30).text("Event: "+event_id).style("fill","black").style("font-size",18);
                 svg.append('g').append("text").attr("x",12).attr("y",50).text("GPS Time: "+timestamp).style("fill","black").style("font-size",18);
                 for(var q = 0; q < 4; q++){
                     var maxval = getabsmax(readydata[q].values);
-                    svg.append('g').append("text").attr("x",12).attr("y",70+20*q).text(thelabels[q]+", |max|: "+maxval).style("fill",thecolors[q+1]).style("font-size",18);
+                    svg.append('g').append("text").attr("x",12).attr("y",70+20*q).text(thelabels[q]+", max(absolute): "+maxval)
+                       .style("fill",thecolors[q]).style("font-size",18);
                 }
-                //svg.selectAll("myLabels").data(readydata).enter().append('g').append("text")
-                //    .datum(function(d) { return {name: d.name, value: d.values[0]}; }) // use x-value of start as datum
-                //    ///.attr("transform", function(d) { return "translate(" + x(d.value.time) + "," + y(d.value.value) + ")"; }) // Put the text at the position of the last point
-                //    .attr("transform", function(d,i){ return "translate(" + x(0) + y(5+i*10) + ")"})
-                //    .attr("x", 12) // shift the text a bit more right
-                //    .text(function(d) { return d.name; }).style("fill", function(d){ return myColor(d.name) }).style("font-size", 25);
             }
         }
+        //internal function that gets the absolute maximum of G from Y in an X-Y pair array that is svg-ready (array of .value)
         function getabsmax(valuearray){
             var absmax = 0;
             var absmin = 0;
@@ -164,107 +210,28 @@
             }
             return absmax;
         }
-        /*
-        //step 2: for each file name, we'll create a time vs. acceleration magnitude chart
-        //for(var f = 0; f < filenames.length; f++){
-        
-        var time0 = subsetdata[0].time;
-        var time1 = subsetdata[subsetdata.length-1].time;
-        //TODO: instead of per file, reduce to per event. trigger a new event when the time-step is greater than 5 second between two lines in the file.
-        var ymin  = 0;
-        var ymax  = d3.max(subsetdata, d => d.maccl);
-        var length = subsetdata.length;
-        var svg = getNode("svg");
-        document.body.appendChild(svg);
-        svg.appendChild( getNode('rect', { width:200, height:20, fill:'#ff0000' }) );
-        var edge = 100;
-        var margin = edge*2;
-        //var width = svg.attr("width") - margin;
-        //var height = svg.attr("height") - margin;
-        console.log(filenames[f],time0,time1,ymin,ymax);
-
-        
-        // Reformat the data: we need an array of arrays of {x, y} tuples
-        var dataReady = allGroup.map( function(grpName) { // .map allows to do something for each element of the list
-            return {
-                name: grpName,
-                values: data.map(function(d) {
-                    return {time: d.time, value: +d[grpName]};
-                })
-            };
-        });*/
+        drewonce = true;
     }
 
-    function goignorecheckbox(){
-        ignorethreshold = !ignorethreshold;
-    }
-    function gochartcheckbox(){
-        straighttochart = !straighttochart;
-    }
-
-    function openBatchCSV(){
-        linecount = 0;
-        gthreshold = document.getElementById("idgthreshold").value;
-        framesize = document.getElementById("idframesize").value;
-		document.getElementById("rstatus").innerHTML += "opencsv() start,";
-        var str = "20240123-204239";
-        document.getElementById("rstatus").innerHTML += "*"+(str.slice(0,8))+"*";
-        document.getElementById("rstatus").innerHTML += "*"+(str.slice(9))+"*";
-		num_files = event.target.files.length;
-		//curr_file = 0;
-        //for(var i = 0; i < num_files; i++){ //commented out means this is recursive
-            openOneCSV(0,event); 
-        //}
-		document.getElementById("rstatus").innerHTML += "opencsv() done,";
-    }
-
-    function openOneCSV(index, event){
-		document.getElementById("rstatus").innerHTML += "openOnecsv() start,";
-        var f = event.target.files[index];
-        const reader = new FileReader();
-        reader.onload = function(e){
-            document.getElementById("rstatus").innerHTML += "fileReaderStarting,";
-            const text = e.target.result;
-            const data = d3.csvParse(text);
-            var fname = f.name;
-            process_json(data, fname);
-            //if(curr_file == num_files - 1){
-            if(index == num_files - 1){
-            //draw the stuff now:
-                document.getElementById("rstatus").innerHTML += "Last file completed. pulled "+big_data.length+" lines from "+linecount+" total lines";
-                //generateTable(big_data,1000);
-                if(straighttochart){
-                    plotAll(big_data);
-                }
-                else{
-                    downloadXLSX(big_data);
-                }
-            }
-            else{
-                openOneCSV(index+1, event);
-            }
-            curr_file++;
-        };
-        reader.readAsText(f);
-    }
-
+    //Input: data is a d3.parseCSV(filename), and "filename" is string of the filename
+    //Output: no return.
+    //Action: strips off columns to leave time, x y z gyro, x y z accl, GPSFixMode, GPSDateTime, and ADDS filename, line, decay, eventcounter
+    //and stores "data" into global "big_data" as a push() command.
     function process_json(data, filename){
-        var sel_data = data.map(
+        var step = (data.length)/10;
+        var nextstep = step;
+        var sel_data = data.map( //strips off the other columns that are not mentioned here, like GPS Lat/Long
             ({
-                time, xgyro, ygyro, zgyro, xaccl, yaccl, zaccl, GPSFixMode, GPSDateTime, 
-                //GPSLongitude, GPSLatitude, 
-                GPSGroundSpeed
+                time, xgyro, ygyro, zgyro, xaccl, yaccl, zaccl, GPSFixMode, GPSDateTime
             }) =>
             {
             return{
-                time, xgyro, ygyro, zgyro, xaccl, yaccl, zaccl, GPSFixMode, GPSDateTime, 
-                //GPSLongitude, GPSLatitude, 
-                GPSGroundSpeed
+                time, xgyro, ygyro, zgyro, xaccl, yaccl, zaccl, GPSFixMode, GPSDateTime
                 }
             }
         );
         for(var i = 0; i < sel_data.length; i++){
-            //add metadata
+            //internal functions on parsing floats and ints. If NaN, assume 0. Typical for empty cells.
             function parseFloatNaN(passed){
                 var answer = parseFloat(passed);
                 if(isNaN(answer)) return 0;
@@ -275,6 +242,7 @@
                 if(isNaN(answer)) return 0;
                 return answer;
             }
+            //add metadata of filename, and a linecounter (unique to entire dataset in use)
             sel_data[i].filename = filename;
             sel_data[i].line = linecount;
             linecount++;
@@ -288,17 +256,16 @@
             sel_data[i].xaccl = parseFloatNaN(sel_data[i].xaccl);
             sel_data[i].yaccl = parseFloatNaN(sel_data[i].yaccl);
             sel_data[i].zaccl = parseFloatNaN(sel_data[i].zaccl);
-            sel_data[i].maccl = Math.sqrt(sel_data[i].xaccl*sel_data[i].xaccl+sel_data[i].yaccl*sel_data[i].yaccl+sel_data[i].zaccl*sel_data[i].zaccl);
+            sel_data[i].maccl = Math.sqrt(sel_data[i].xaccl*sel_data[i].xaccl+
+                                          sel_data[i].yaccl*sel_data[i].yaccl+
+                                          sel_data[i].zaccl*sel_data[i].zaccl);
             sel_data[i].active = 0;
             sel_data[i].GPSFixMode = parseInt(sel_data[i].GPSFixMode);
-            //GPSDateTime will remain as text excample 20240123-204239
-            sel_data[i].GPSDate = parseIntNan(sel_data[i].GPSDateTime.slice(0,8));
-            sel_data[i].GPSTime = parseIntNan(sel_data[i].GPSDateTime.slice(9));
-            //sel_data[i].GPSLongitude = parseFloat(sel_data[i].GPSLongitude);
-            //sel_data[i].GPSLatitude = parseFloat(sel_data[i].GPSLatitude);
-            sel_data[i].GPSGroundSpeed = parseFloatNaN(sel_data[i].GPSGroundSpeed);
+            //GPSDateTime will remain as text example 20240123-204239
+            //sel_data[i].GPSDate = parseIntNan(sel_data[i].GPSDateTime.slice(0,8));
+            //sel_data[i].GPSTime = parseIntNan(sel_data[i].GPSDateTime.slice(9));
         }
-        //threshold finder
+        //mark events by threshold being exceeded
         const lookforward = framesize;
         var syson = 0;
         var decay;
@@ -311,11 +278,18 @@
                 sel_data[i].decay = decay;
                 if(syson == 0){ 
                     //CONDITION: if accel is over threshold and system was idle, go active and also look backward and set active
+                    //to reduce overlap, start at the neighboring line just before: if that one is active, halt the lookback.
                     curr_event++;
-                    for(var back = i - lookforward; back < i; back++){
+                    for(var back = i - 1; back >= i - lookforward; back--){
                         if(back > 0){
-                            sel_data[back].active = 1;
-                            sel_data[back].eventcounter = curr_event;
+                            if(sel_data[back].active > 0){
+                                //abort the lookback, this is a previous event
+                                back = -1; //will break the for loop
+                            }
+                            else{
+                                sel_data[back].active = 1;
+                                sel_data[back].eventcounter = curr_event;
+                            }
                         }
                     }
                     syson = 1; //now set to syson to avoid any more lookbacks.
@@ -336,22 +310,14 @@
                 //else CONDITION: if accel is under threshold and system is off, keep data inactive.
             }
         }
-        //store it
-        //var filtered = [];
+        //store it in big_data
         for(var i = 0; i < sel_data.length; i++){
-            //linecount++;
             if(sel_data[i].active == 1 || ignorethreshold){
                 var activeitem = {};
                 activeitem = sel_data[i];
-                //filtered.push(activeitem);
                 big_data.push(activeitem);
             }
-            if(i == sel_data.length -1){
-                document.getElementById("rstatus").innerHTML += "File Time (ms): "+sel_data[i].time;
-            }
         }
-        //generateTable(sel_data, 2);
-        //big_data.push(filtered);
     }
 
     function generateTable(data, maxlines) {
@@ -386,11 +352,58 @@
         tbl.setAttribute("border", "2");
     }
 
+    function openBatchCSV(){
+        gthreshold = document.getElementById("idgthreshold").value;
+        framesize = document.getElementById("idframesize").value;
+		num_files = event.target.files.length;
+        openOneCSV(0,event); 
+    }
 
-    function downloadXLSX(data) {
-        const worksheet = XLSX.utils.json_to_sheet(data);		
+    function openOneCSV(index, event){
+        var f = event.target.files[index];
+        const reader = new FileReader();
+        reader.onload = function(e){
+            const text = e.target.result;
+            const data = d3.csvParse(text);
+            var fname = f.name;
+            document.getElementById("csvstatus").innerHTML += fname;
+            process_json(data, fname);
+            if(index == num_files - 1){
+            //then you're done loading the csv files
+                document.getElementById("csvstatus").innerHTML = "Last file completed. I have "+big_data.length+" lines from "+linecount+" total lines";
+                if(big_data.length > 0){
+                    document.getElementById("id_download_xlsx").disabled = false;
+                }
+                readyize();
+            }
+            else{
+                openOneCSV(index+1, event);
+            }
+            curr_file++;
+        };
+        reader.readAsText(f);
+    }
+
+    function openOneXLSX(){
+        var f = event.target.files[0];
+        const reader = new FileReader();
+        reader.onload = function(e){
+            var binaryString = e.target.result;
+            var inputWorkbook = XLSX.read(binaryString, {type: 'binary'});
+            var firstSheetname = inputWorkbook.SheetNames[0];
+            var firstWorksheet = inputWorkbook.Sheets[firstSheetname];
+            var firstJSON = XLSX.utils.sheet_to_json(firstWorksheet, {defval:"0"});
+            document.getElementById("rstatus").innerHTML = "Excel loaded. Lines: "+firstJSON.length;
+            readyize();
+        }
+        reader.readAsBinaryString(f);
+    }
+
+    function downloadXLSX() {
+        const worksheet = XLSX.utils.json_to_sheet(big_data);		
 	    const workbook  = XLSX.utils.book_new();
 	    XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
 	    XLSX.writeFile(workbook, "output.xlsx", {compression:true});
     }
+
 </script>
