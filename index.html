@@ -7,7 +7,7 @@
 <head>
 <title>Page Title</title>
 </head>
-<body>
+<body onload="onLoad()">
 <p><b>Step 1.</b> Use Batch Rename Utility to put "serXXXX" where XXXX is the sensor serial number at the front of the file name for each LOG file</p>
 <p><b>Step 2.</b> Place all LOG files in a single directory with the logdecoder.exe. In this example, this was "c:\space\"</p>
 <p><b>Step 3.</b> Make a new Batch file (that's text with extension .bat) in the c:\space\ directory with the only line inside: "for %%f in (.\ser*) DO c:\space\logdecoder.exe %%f"</p>
@@ -32,16 +32,44 @@ the page file. However, very very large files that cannot even be saved after St
 <hr>
 <p>Data status:<a id="datastatus"></a></p>
 <hr>
+<form>
+Filename:<select name="whichfile" id="idselectfile" onchange="newselectfile()"></select>
+Event:<select name="whichevent" id="idselectevent"></select><br>
 X-min:<input type="number" id="idxmin" name="namexmin" value="0" step="1000">
 X-max:<input type="number" id="idxmax" name="namexmin" value="1000" step="1000">
 y-Min (G's):<input type="number" id="idymin" name="nameymin" value="-25" step="0.1" >
 y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="0.1" >
-<button onclick="modifyRange()" id="id_draw_button" disabled>Draw</button>
+<input type="submit" id="id_draw_button" disabled value="Draw">
+</form>
 <p id="pstatus">progress:</p>
+<!--<progress id="readyizeprogress" value="0" max="100"></progress>-->
 <p>R status:<a id="rstatus"></a></p>
 <div id="my_dataviz"></div>
 </body>
 <script>
+
+    function onLoad(){
+        console.log("loaded");
+    }
+    function newselectfile(){
+        var whichfile = document.getElementById("idselectfile").value;
+        console.log(filenames, fileeventlist);
+        console.log(whichfile);
+        var eventsize = 0;
+        for(var f = 0; f < filenames.length; f++){
+            if(whichfile.includes(filenames[f])){
+                eventsize = fileeventlist[f];
+            }
+            else eventsize = 0;
+        }
+        console.log(eventsize);
+        for(var q = 0; q < eventsize; q++){
+            var eoption = document.createElement('option');
+            option.text = eoption.value = q;
+            document.getElementById("idselectevent").add(eoption);
+        }
+    }
+    var progressBar;
 
     const thelabels = ["maccl","xaccl","yaccl","zaccl"];
     const thecolors = d3.schemeSet1;
@@ -73,32 +101,66 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="0.
         fileeventlist = []; //reset if old
         var currmax = 0;
         var thisfilename;
+        var currsum = 0;
         for(var line = 0; line < big_data.length; line++){
             if(big_data[line].eventcounter > currmax){
-                currmax = big_data[line].eventcounter; //rely on structure that event counters reset back to 1 with each new file, so dont need special code at beginning
+                currmax = big_data[line].eventcounter; 
+                //rely on structure that event counters reset back to 1 with each new file, so dont need special code at beginning
+                //because the first eventcounter will be a 1 and currmax starts at 0
+                //when eventcounter goes back to 1, the filename will also incremement, so the filename checks handles the rest
             }
             thisfilename = big_data[line].filename;
             if(!filenames.includes(thisfilename)){
                 filenames.push(thisfilename);
                 if(line > 0){
                     fileeventlist.push(currmax);
-                    currmax = 0; //if a new file is reached, except on line 0, store the current max event counter and reset it to 0.
+                    currsum += currmax; //currsum will store total number of events in this big_data.
+                    currmax = 0; //if a new file is reached, except on line 0, store the current max event counter for that filename
+                    // and then reset it to 0 for analyzing the next file
                 }
             }
         }
         fileeventlist.push(currmax); //last line isn't a new file, but still need to store tail end of event counters
         document.getElementById("datastatus").innerHTML = "there are "+filenames.length+" filenames and "+big_data.length+" lines in my data.";
         
+        //prog bar will be 100/#events for each #event
+        var stepsize = 100/currsum;
+
         //step 2: turn all of the big_data chunks into little chunks for drawing using the filter function
         organized_data = new Array(filenames.length);
         for(var f = 0; f < filenames.length; f++){
-            organized_data[f] = new Array(fileeventlist[f]);
+            var foption = document.createElement('option');
+            foption.text = foption.value = filenames[f];
+            document.getElementById("idselectfile").add(foption);
+            organized_data[f] = new Array(fileeventlist[f]+1);
             var subfiledata = big_data.filter(function(d){ return d.filename == filenames[f]});
+            organized_data[f][0] = subfiledata;
             for(var event_id = 1; event_id <= fileeventlist[f]; event_id++){
                 var subsetdata = subfiledata.filter(function(d){ return d.eventcounter == event_id});
                 organized_data[f][event_id] = subsetdata; //I hope this works.                
             }
+            /* //attempt at a prog bar for this task.
+            function delayedLoop(limiter, delay, callback, context){
+                context = context || null;
+                var i = 1;
+                nextIteration = function(){
+                    if(i > limiter){
+                        return;
+                    }
+                    var subsetdata = subfiledata.filter(function(d){ return d.eventcounter == i});
+                    organized_data[f][i] = subsetdata; //I hope this works.                
+                    callback.call(context, i);
+                    i++;
+                    setTimeout(nextIteration, delay);
+                };
+                nextIteration();
+            }
+            delayedLoop(fileeventlist[f], 5, function(index){
+                document.getElementById("readyizeprogress").value += stepsize;
+                console.log("+");
+            });*/
         }
+        console.log(organized_data);
         document.getElementById("rstatus").innerHTML = "readyized";
         document.getElementById("id_draw_button").disabled = false;
         /*
@@ -392,8 +454,8 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="0.
             var inputWorkbook = XLSX.read(binaryString, {type: 'binary'});
             var firstSheetname = inputWorkbook.SheetNames[0];
             var firstWorksheet = inputWorkbook.Sheets[firstSheetname];
-            var firstJSON = XLSX.utils.sheet_to_json(firstWorksheet, {defval:"0"});
-            document.getElementById("rstatus").innerHTML = "Excel loaded. Lines: "+firstJSON.length;
+            big_data = XLSX.utils.sheet_to_json(firstWorksheet, {defval:"0"});
+            document.getElementById("rstatus").innerHTML = "Excel loaded. Lines: "+big_data.length;
             readyize();
         }
         reader.readAsBinaryString(f);
