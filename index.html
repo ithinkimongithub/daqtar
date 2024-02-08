@@ -32,13 +32,15 @@ the page file. However, very very large files that cannot even be saved after St
 <hr>
 <p>Data status:<a id="datastatus">Empty</a></p>
 <hr>
-<form>
 Filename:<select name="whichfile" id="idselectfile" onchange="newselectfile()"></select>
-Event:<select name="whichevent" id="idselectevent"></select><br></form>
-X-min:<input type="number" id="idxmin" name="namexmin" value="0" step="100">
-X-max:<input type="number" id="idxmax" name="namexmin" value="1000" step="100">
-y-Min (G's):<input type="number" id="idymin" name="nameymin" value="-25" step="1" >
-y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1" >
+Event:<select name="whichevent" id="idselectevent" onchange="newselectevent()"></select><a id="eventstatus"></a>
+<input type="button" id="idbuttonsample" disabled value="send to X-max" onclick="sendtoxmax()"><br>
+Draw options: <input type="checkbox" id="idmaccl" checked>maccl <input type="checkbox" id="idxaccl" checked>xaccl
+<input type="checkbox" id="idyaccl" checked>yaccl <input type="checkbox" id="idzaccl" checked>zaccl<br>
+X-min:<input type="number" id="idxmin" name="namexmin" value="0" step="1" onchange="attemptdraw()">
+X-max:<input type="number" id="idxmax" name="namexmin" value="1000" step="1" onchange="attemptdraw()">
+y-Min (G's):<input type="number" id="idymin" name="nameymin" value="-25" step="1" onchange="attemptdraw()">
+y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1" onchange="attemptdraw()">
 <input type="button" id="id_draw_button" disabled value="Draw" onclick="drawSelected()">
 <!--<progress id="readyizeprogress" value="0" max="100"></progress>-->
 <div id="theplot"></div>
@@ -67,7 +69,22 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
     //
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+    function attemptdraw(){
+        if(document.getElementById("id_draw_button").disabled == false) drawSelected();
+    }
+
     function onLoad(){}
+
+    function sendtoxmax(){
+        var whicheventselected = parseInt(document.getElementById("idselectevent").value);
+        var val = organized_data[whichfileselected][whicheventselected].length;
+        document.getElementById("idxmax").value = val;
+    }
+
+    function newselectevent(){
+        var whicheventselected = parseInt(document.getElementById("idselectevent").value);
+        document.getElementById("eventstatus").innerHTML = "contains "+organized_data[whichfileselected][whicheventselected].length+" samples.";
+    }
 
     function newselectfile(){
         var whichfile = document.getElementById("idselectfile").value;
@@ -84,6 +101,8 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
             eoption.text = eoption.value = q;
             document.getElementById("idselectevent").add(eoption);
         }
+        document.getElementById("eventstatus").innerHTML = "contains "+organized_data[whichfileselected][0].length+" samples.";
+        document.getElementById("idbuttonsample").disabled = false;
     }
 
     function checkignoreexcel(){ ignoreexcel = !ignoreexcel;    }
@@ -130,7 +149,7 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
             const text = e.target.result;
             const data = d3.csvParse(text);
             var fname = f.name;
-            document.getElementById("csvstatus").innerHTML += fname;
+            document.getElementById("csvstatus").innerHTML += fname+"<br />";
             process_json(data, fname);
             if(index == num_files - 1){
             //then you're done loading the csv files
@@ -335,7 +354,6 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
                 organized_data[f][event_id] = subsetdata; //I hope this works.                
             }
         }
-        console.log(organized_data);
         document.getElementById("datastatus").innerHTML = " Data contains "+filenames.length+" logs, "+currsum+" total events.";
         document.getElementById("id_draw_button").disabled = false;
         newselectfile();
@@ -346,6 +364,10 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
     // DRAW SELECTED
     //
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    function lower(a,b){
+        if (a < b) return a;
+        return b;
+    }
     var alreadyplotted = false;
     function drawSelected(){
         if(alreadyplotted){
@@ -360,44 +382,43 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
         var xmax = document.getElementById("idxmax").value;
         var ymin = document.getElementById("idymin").value;
         var ymax = document.getElementById("idymax").value;
-        if(ymin > ymax){
-            var temp = ymin;
-            ymin = ymax;
-            ymax = temp;
-        }
-        else if(ymin == ymax){
-            console.log("screwed up");
-        }
+        var draw_opts = [   document.getElementById("idmaccl").checked,
+                            document.getElementById("idxaccl").checked,
+                            document.getElementById("idyaccl").checked,
+                            document.getElementById("idzaccl").checked];
         var tzero = -1;
         var tfini = -1;
+        var xstop = lower(xmax, organized_data[whichfileselected][whicheventselected].length);
+        var howmanytoplot = 0;
+        var theselabels = [];
         for(var param = 0; param < thelabels.length; param++){
-            var entrypair = {};
-                entrypair.name = thelabels[param];
-                entrypair.values = [];
-            for(var i = 0; i < organized_data[whichfileselected][whicheventselected].length; i++){
-                if(i >= xmin && i < xmax){
+            if(draw_opts[param]){
+                howmanytoplot++;
+                theselabels.push(thelabels[param]);
+                var entrypair = {};
+                    entrypair.name = thelabels[param];
+                    entrypair.values = [];
+                for(var i = xmin; i < xstop; i++){
                     var xypair = {};
-                    xypair.time = organized_data[whichfileselected][whicheventselected][i].time;
+                    xypair.time = organized_data[whichfileselected][whicheventselected][i].time/1000;
                     xypair.value = organized_data[whichfileselected][whicheventselected][i][thelabels[param]];
                     entrypair.values.push(xypair);
                 }
+                plottable_data.push(entrypair);
             }
-            plottable_data.push(entrypair);
         }
-        //get first value for tzero, and last value for tfini
-        tzero = plottable_data[0].values[0].time;
-        tfini = plottable_data[0].values[plottable_data[0].values.length-1].time;
-        var timestamp = plottable_data[0].values[0].GPSDateTime;
+        var timestamp = organized_data[whichfileselected][whicheventselected][0].GPSDateTime;
+        tzero = organized_data[whichfileselected][whicheventselected][xmin].time/1000;
+        tfini = organized_data[whichfileselected][whicheventselected][xstop-1].time/1000;
         //now draw the plot given plottable_data
-        console.log("org selected:",organized_data[whichfileselected][whicheventselected]);
-        console.log(plottable_data);
+
         var margin = {top: 10, right: 100, bottom: 30, left: 30},
             width = 1700 - margin.left - margin.right,
             height = 700 - margin.top - margin.bottom;
         var svg = d3.select("#theplot").append("svg").attr("width", width + margin.left + margin.right)
                     .attr("height", height + margin.top + margin.bottom).append("g")
                     .attr("transform","translate(" + margin.left + "," + margin.top + ")");
-        var myColor = d3.scaleOrdinal().domain(thelabels).range(d3.schemeSet1);
+        var myColor = d3.scaleOrdinal().domain(theselabels).range(d3.schemeSet1);
         var x = d3.scaleLinear().domain([tzero,tfini]).range([ 0, width ]);
         svg.append("g").attr("transform", "translate(0," + height + ")").call(d3.axisBottom(x));
         var y = d3.scaleLinear().domain([ymin,ymax]).range([ height, 0 ]);
@@ -414,9 +435,9 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
         svg.append('g').append("text").attr("x",12).attr("y",10).text("File: "+filenames[whichfileselected]).style("fill","black").style("font-size",18);
         svg.append('g').append("text").attr("x",12).attr("y",30).text("Event: "+whicheventselected).style("fill","black").style("font-size",18);
         svg.append('g').append("text").attr("x",12).attr("y",50).text("GPS Time: "+timestamp).style("fill","black").style("font-size",18);
-        for(var q = 0; q < 4; q++){
+        for(var q = 0; q < howmanytoplot; q++){
             var maxval = getabsmax(plottable_data[q].values);
-            svg.append('g').append("text").attr("x",12).attr("y",70+20*q).text(thelabels[q]+", max(absolute): "+maxval)
+            svg.append('g').append("text").attr("x",12).attr("y",70+20*q).text(theselabels[q]+", max(absolute): "+maxval)
             .style("fill",thecolors[q]).style("font-size",18);
         }
         //internal function that gets the absolute maximum of G from Y in an X-Y pair array that is svg-ready (array of .value)
