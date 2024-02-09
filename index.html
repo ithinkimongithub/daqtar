@@ -16,32 +16,35 @@
     is how many samples to capture on either side of an event that is over that G-threshold.<br>
 <p>
 <label for="gthreshold">G threshold:</label>
-<input type="number" id="idgthreshold" name="gthreshold" value="3" step="0.1">
+<input type="number" id="idgthreshold" name="gthreshold" value="3" step="0.1" style="width: 50px;">
 <label for="framesize">Look back/look forward:</label>
-<input type="number" id="idframesize" name="framesize" value="1000" step="1">
+<input type="number" id="idframesize" name="framesize" value="1000" step="1" style="width: 75px;">
 <input type="checkbox" id="idgimme" name="gimme" onchange="checkignorethreshold()"><label for="gimme">Ignore the G-threshold, I want everything.</label></p>
 <p><b>Step 6.</b> Use the "Open" button to select all .csv files of interest and trim down according to criteria above (threshold and look back/forward).</p>
 <p>CSV File(s): <input multiple type="file" name="fileinput" id="fileinputid" onchange="openBatchCSV()" accept=".csv"/>I don't alphabetize for you.</p>
 <p>your input status:<a id="csvstatus"></a></p>
 <button onclick="downloadXLSX()" id="id_download_xlsx" disabled>Download XLSX</button>
 <hr>
-<p><b>Shortcut.</b> If you already have the XLSX, choose the file and we can start from there. If you are using very large files, it is best to save the Excel
-output and then restart your browser anew and then load the XLSX. The garbage collection after the CSV process will otherwise be very slow when it goes into using
-the page file. However, very very large files that cannot even be saved after Step 6 require a snipping tool.</p>
+<p><b>Shortcut.</b> If you already have the XLSX, choose the file and we can start from there. However, exceeding 1 million lines will likely break the 
+    excel saver function and the page will hang. You can draw very large CSV's though!</p>
 <p>XLSX File: <input type="file" name="xlsxinput" id="xlsxinputid" onchange="openOneXLSX()" accept=".xlsx"/></p>
 <hr>
 <p>Data status:<a id="datastatus">Empty</a></p>
 <hr>
-Filename:<select name="whichfile" id="idselectfile" onchange="newselectfile()"></select>
+Filename:<select name="whichfile" id="idselectfile" onchange="newselectfile()"></select><a id="filestatus"></a>
 Event:<select name="whichevent" id="idselectevent" onchange="newselectevent()"></select><a id="eventstatus"></a>
-<input type="button" id="idbuttonsample" disabled value="send to X-max" onclick="sendtoxmax()"><br>
-Draw options: <input type="checkbox" id="idmaccl" checked>maccl <input type="checkbox" id="idxaccl" checked>xaccl
-<input type="checkbox" id="idyaccl" checked>yaccl <input type="checkbox" id="idzaccl" checked>zaccl<br>
-X-min:<input type="number" id="idxmin" name="namexmin" value="0" step="1" onchange="attemptdraw()">
-X-max:<input type="number" id="idxmax" name="namexmin" value="1000" step="1" onchange="attemptdraw()">
-y-Min (G's):<input type="number" id="idymin" name="nameymin" value="-25" step="1" onchange="attemptdraw()">
-y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1" onchange="attemptdraw()">
-<input type="button" id="id_draw_button" disabled value="Draw" onclick="drawSelected()">
+<input type="button" id="idbuttonsample" disabled value="set to bounds" onclick="sendtobounds()"><br>
+Draw options: 
+ <input type="checkbox" id="idmaccl" checked onchange="attemptdraw()">maccl
+ <input type="checkbox" id="idxaccl" checked onchange="attemptdraw()">xaccl
+ <input type="checkbox" id="idyaccl" checked onchange="attemptdraw()">yaccl 
+ <input type="checkbox" id="idzaccl" checked onchange="attemptdraw()">zaccl<br>
+X-min:<input type="number" id="idxmin" name="namexmin" value="0" step="1" style="width: 100px;" onchange="attemptdraw()">
+X-max:<input type="number" id="idxmax" name="namexmin" value="1000" step="1" style="width: 100px;" onchange="attemptdraw()">
+y-Min (G's):<input type="number" id="idymin" name="nameymin" value="-25" step="1" style="width: 50px;" onchange="attemptdraw()">
+y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1" style="width: 50px;" onchange="attemptdraw()">
+Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1" style="width: 50px;" onchange="attemptdraw()">
+<input type="button" id="id_draw_button" disabled value="Auto Plot Next Event" onclick="AutoPlotNext()">
 <!--<progress id="readyizeprogress" value="0" max="100"></progress>-->
 <div id="theplot"></div>
 </body>
@@ -75,10 +78,12 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
 
     function onLoad(){}
 
-    function sendtoxmax(){
+    function sendtobounds(){
         var whicheventselected = parseInt(document.getElementById("idselectevent").value);
         var val = organized_data[whichfileselected][whicheventselected].length;
         document.getElementById("idxmax").value = val;
+        document.getElementById("idxmin").value = 0;
+        drawSelected();
     }
 
     function newselectevent(){
@@ -96,13 +101,15 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
             }
         }
         document.getElementById("idselectevent").innerHTML = ""; //boo-yeah
-        for(var q = 0; q < eventsize; q++){
+        for(var q = 0; q <= eventsize; q++){
             var eoption = document.createElement('option');
             eoption.text = eoption.value = q;
             document.getElementById("idselectevent").add(eoption);
         }
+        document.getElementById("filestatus").innerHTML = "contains "+fileeventlist[whichfileselected]+" events.";
         document.getElementById("eventstatus").innerHTML = "contains "+organized_data[whichfileselected][0].length+" samples.";
         document.getElementById("idbuttonsample").disabled = false;
+        document.getElementById("idxmax").value = organized_data[whichfileselected][0].length;
     }
 
     function checkignoreexcel(){ ignoreexcel = !ignoreexcel;    }
@@ -129,6 +136,35 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
         tbl.setAttribute("border", "2");       
     }
 
+    function AutoPlotNext(){
+        if(!alreadyplotted){
+            drawSelected();
+            return;
+        }
+        //increment the event selection
+        //maybe increment the file
+        var whicheventselected = parseInt(document.getElementById("idselectevent").value);
+        document.getElementById("idselectevent").options[whicheventselected].selected = false;
+        whicheventselected++;
+        if(whicheventselected > fileeventlist[whichfileselected]){
+            document.getElementById("idselectfile").options[whichfileselected].selected = false;
+            whichfileselected++;
+            whicheventselected = 0;
+            if(whichfileselected == filenames.length){
+                whichfileselected = 0;
+            }
+            document.getElementById("idselectfile").options[whichfileselected].selected = true;
+            newselectfile();
+        }
+        console.log(whichfileselected, whicheventselected, filenames[whichfileselected], fileeventlist[whichfileselected]);
+        document.getElementById("idselectevent").options[whicheventselected].selected = true;
+        //set to bounds
+        document.getElementById("idxmin").value = 0;
+        document.getElementById("idxmax").value = organized_data[whichfileselected][whicheventselected].length;
+        //draw
+        drawSelected();
+    }
+
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //
     // FILE I/O FUNCTIONS
@@ -148,6 +184,9 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
         reader.onload = function(e){
             const text = e.target.result;
             const data = d3.csvParse(text);
+            if(data.length < 1){
+                alert(f.name +" had 0 lines or was too large!");
+            }
             var fname = f.name;
             document.getElementById("csvstatus").innerHTML += fname+"<br />";
             process_json(data, fname);
@@ -314,27 +353,29 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
         filenames = []; //reset if old
         fileeventlist = []; //reset if old
         var currmax = 0;
+        var prevfilename = big_data[0].filename;
         var thisfilename;
         var currsum = 0;
         for(var line = 0; line < big_data.length; line++){
+            thisfilename = big_data[line].filename;
+            if(prevfilename != thisfilename){
+                filenames.push(prevfilename);
+                prevfilename = thisfilename;
+                fileeventlist.push(currmax);
+                currsum += currmax; //currsum will store total number of events in this big_data.
+                currmax = 0; //if a new file is reached, except on line 0, store the current max event counter for that filename
+                // and then reset it to 0 for analyzing the next file
+            }
             if(big_data[line].eventcounter > currmax){
                 currmax = big_data[line].eventcounter; 
                 //rely on structure that event counters reset back to 1 with each new file, so dont need special code at beginning
                 //because the first eventcounter will be a 1 and currmax starts at 0
                 //when eventcounter goes back to 1, the filename will also incremement, so the filename checks handles the rest
             }
-            thisfilename = big_data[line].filename;
-            if(!filenames.includes(thisfilename)){
-                filenames.push(thisfilename);
-                if(line > 0){
-                    fileeventlist.push(currmax);
-                    currsum += currmax; //currsum will store total number of events in this big_data.
-                    currmax = 0; //if a new file is reached, except on line 0, store the current max event counter for that filename
-                    // and then reset it to 0 for analyzing the next file
-                }
-            }
         }
         fileeventlist.push(currmax); //last line isn't a new file, but still need to store tail end of event counters
+        filenames.push(thisfilename);
+        currsum += currmax;
         document.getElementById("datastatus").innerHTML = "there are "+filenames.length+" filenames and "+big_data.length+" lines in my data.";
         
         //prog bar will be 100/#events for each #event
@@ -378,7 +419,7 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
         //to do: code out range of interest on the x-axis in terms of the event sample number
         var whicheventselected = parseInt(document.getElementById("idselectevent").value);
         var plottable_data = [];
-        var xmin = document.getElementById("idxmin").value;
+        var xmin = parseInt(document.getElementById("idxmin").value);
         var xmax = document.getElementById("idxmax").value;
         var ymin = document.getElementById("idymin").value;
         var ymax = document.getElementById("idymax").value;
@@ -388,17 +429,26 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
                             document.getElementById("idzaccl").checked];
         var tzero = -1;
         var tfini = -1;
-        var xstop = lower(xmax, organized_data[whichfileselected][whicheventselected].length);
+        var dotradius = parseInt(document.getElementById("idradius").value);
+        var xsize = organized_data[whichfileselected][whicheventselected].length;
+        if(xmax > xsize){
+            xmax = xsize;
+            document.getElementById("idxmax").value = xsize;
+        }
+        if (xmin < 0){
+            xmin = 0;
+            document.getElementById("idxmin").value = 0;
+        }
         var howmanytoplot = 0;
         var theselabels = [];
         for(var param = 0; param < thelabels.length; param++){
             if(draw_opts[param]){
                 howmanytoplot++;
-                theselabels.push(thelabels[param]);
+                theselabels.push(thelabels[param]);                
                 var entrypair = {};
                     entrypair.name = thelabels[param];
                     entrypair.values = [];
-                for(var i = xmin; i < xstop; i++){
+                for(var i = xmin; i < xmax; i++){
                     var xypair = {};
                     xypair.time = organized_data[whichfileselected][whicheventselected][i].time/1000;
                     xypair.value = organized_data[whichfileselected][whicheventselected][i][thelabels[param]];
@@ -409,7 +459,7 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
         }
         var timestamp = organized_data[whichfileselected][whicheventselected][0].GPSDateTime;
         tzero = organized_data[whichfileselected][whicheventselected][xmin].time/1000;
-        tfini = organized_data[whichfileselected][whicheventselected][xstop-1].time/1000;
+        tfini = organized_data[whichfileselected][whicheventselected][xmax-1].time/1000;
         //now draw the plot given plottable_data
 
         var margin = {top: 10, right: 100, bottom: 30, left: 30},
@@ -429,7 +479,8 @@ y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1"
         svg.selectAll("myDots").data(plottable_data).enter().append('g').style("fill", function(d){ return myColor(d.name) })
             .selectAll("myPoints").data(function(d){ return d.values }).enter().append("circle")
             .attr("cx", function(d) { return x(d.time) } )
-            .attr("cy", function(d) { return y(d.value) } ).attr("r", 2)
+            .attr("cy", function(d) { return y(d.value) } ).attr("r", dotradius)
+            .append("svg:title").text(function(d){ return d.value});
             //.attr("stroke", "white")
         //LEGEND
         svg.append('g').append("text").attr("x",12).attr("y",10).text("File: "+filenames[whichfileselected]).style("fill","black").style("font-size",18);
