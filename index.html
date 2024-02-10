@@ -14,23 +14,21 @@
 <b>Step 4.</b> Execute the Batch file. This should open a terminal and show the logdecoder.exe at work<br>
 <b>Step 5.</b> Modify the following parameters as you see fit. The G-threshold is the magnitude of the acceleration vector, and framesize
     is how many samples to capture on either side of an event that is over that G-threshold.<br>
-<p>
-<p>Fat: <input type="file" name="fileinput" id="fileinputid" onchange="fatOpen()" accept=".csv"/>Fat Open</p>
+<b>Step 6.</b> Use the "Open" button to select all .csv files of interest and trim down according to criteria (threshold and look back/forward).<br>
 <label for="gthreshold">G threshold:</label>
 <input type="number" id="idgthreshold" name="gthreshold" value="3" step="0.1" style="width: 50px;">
 <label for="framesize">Look back/look forward:</label>
 <input type="number" id="idframesize" name="framesize" value="1000" step="1" style="width: 75px;">
-<input type="checkbox" id="idgimme" name="gimme" onchange="checkignorethreshold()"><label for="gimme">Ignore the G-threshold, I want everything.</label></p>
-<p><b>Step 6.</b> Use the "Open" button to select all .csv files of interest and trim down according to criteria above (threshold and look back/forward).</p>
-<p>CSV File(s): <input multiple type="file" name="fileinput" id="fileinputid" onchange="openBatchCSV()" accept=".csv"/>I don't alphabetize for you.</p>
-<p>your input status:<a id="csvstatus"></a></p>
-<button onclick="downloadXLSX()" id="id_download_xlsx" disabled>Download XLSX</button>
-<hr>
-<p><b>Shortcut.</b> If you already have the XLSX, choose the file and we can start from there. However, exceeding 1 million lines will likely break the 
-    excel saver function and the page will hang. You can draw very large CSV's though!</p>
+<input type="checkbox" id="idgimme" name="gimme" onchange="checkignorethreshold()"><label for="gimme">Ignore the G-threshold, I want everything.</label><br>
+<p>CSV File(s): <input multiple type="file" name="fileinput" id="fileinputid" onchange="fatOpen()" accept=".csv"/></p>
+<b>Step 7 (optional)</b>: Save the filtered CSV as an XLSX. <button onclick="downloadXLSX()" id="id_download_xlsx" disabled>Download XLSX</button><br>
+This will likely fail if there are more than 1 million rows of data. You can however skip this step and go to drawing, but each time the page
+refreshes you'll need to reload the CSV's again.<br>
+<b>Shortcut.</b> If you finished Step 7, choose the file and we can start from there.<br>
 <p>XLSX File: <input type="file" name="xlsxinput" id="xlsxinputid" onchange="openOneXLSX()" accept=".xlsx"/></p>
 <hr>
-<p>Data status:<a id="datastatus">Empty</a></p>
+<p>CSV Info:<a id="csvstatus"></a></p>
+<p>Log Info:<a id="datastatus"></a></p>
 <hr>
 Filename:<select name="whichfile" id="idselectfile" onchange="newselectfile()"></select><a id="filestatus"></a>
 Event:<select name="whichevent" id="idselectevent" onchange="newselectevent()"></select><a id="eventstatus"></a>
@@ -39,13 +37,15 @@ Draw options:
  <input type="checkbox" id="idmaccl" checked onchange="attemptdraw()">maccl
  <input type="checkbox" id="idxaccl" checked onchange="attemptdraw()">xaccl
  <input type="checkbox" id="idyaccl" checked onchange="attemptdraw()">yaccl 
- <input type="checkbox" id="idzaccl" checked onchange="attemptdraw()">zaccl<br>
+ <input type="checkbox" id="idzaccl" checked onchange="attemptdraw()">zaccl
+ <input type="checkbox" id="idauto" checked>Update on change?
+ <input type="button" id="id_draw_button" disabled value="Draw" onclick="drawSelected()"><br>
 X-min:<input type="number" id="idxmin" name="namexmin" value="0" step="1" style="width: 100px;" onchange="attemptdraw()">
 X-max:<input type="number" id="idxmax" name="namexmin" value="1000" step="1" style="width: 100px;" onchange="attemptdraw()">
 y-Min (G's):<input type="number" id="idymin" name="nameymin" value="-25" step="1" style="width: 50px;" onchange="attemptdraw()">
 y-Max (G's):<input type="number" id="idymax" name="nameymax" value="25" step="1" style="width: 50px;" onchange="attemptdraw()">
 Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1" style="width: 50px;" onchange="attemptdraw()">
-<input type="button" id="id_draw_button" disabled value="Auto Plot Next Event" onclick="AutoPlotNext()">
+<input type="button" id="id_draw_next" disabled value="Go to Next Event" onclick="AutoPlotNext()">
 <!--<progress id="readyizeprogress" value="0" max="100"></progress>-->
 <div id="theplot"></div>
 </body>
@@ -73,7 +73,11 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     function attemptdraw(){
-        if(document.getElementById("id_draw_button").disabled == false) drawSelected();
+        if(document.getElementById("id_draw_button").disabled == false && 
+           document.getElementById("idauto").checked == true)
+           {
+            drawSelected();
+           }
     }
 
     function onLoad(){}
@@ -156,7 +160,7 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
             document.getElementById("idselectfile").options[whichfileselected].selected = true;
             newselectfile();
         }
-        console.log(whichfileselected, whicheventselected, filenames[whichfileselected], fileeventlist[whichfileselected]);
+        //console.log(whichfileselected, whicheventselected, filenames[whichfileselected], fileeventlist[whichfileselected]);
         document.getElementById("idselectevent").options[whicheventselected].selected = true;
         //set to bounds
         document.getElementById("idxmin").value = 0;
@@ -187,7 +191,6 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
         const chunksize = 104857600; //104857600; 100MB. Chunk size must be a large enough number. too small and you won't even read a single line at a time!
         var f = event.target.files[index];
         var raw_data = [];
-        var leftovers = ""; //the last line of a chunk is the leftovers for the next chunk to attach to before doing more work.
         const reader = new FileReader();
         getOneSlice(0);
         function getOneSlice(startbyte){
@@ -195,11 +198,11 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
             var blob = f.slice(startbyte, next_slice);
             reader.onload = function(e){
                 var size_done = startbyte + chunksize;
-                //put the left overs from last slice in front. leftovers starts as an empty string ""
-                var text = leftovers + e.target.result;
+                var text = e.target.result;
                 var byline = text.split('\n'); //separate text by line.
+                //console.log(byline[0]);
                 //loop through each line.
-                var notlastslice = 1; //NOTICE: the ending is MINUS ONE because last line will be left overs intentionally
+                var notlastslice = 1; //the ending is MINUS ONE because last line will be left overs intentionally
                 if(next_slice > f.size){
                     notlastslice = 0; //changes for-loop behavior to read the last line too. otherwise it goes into the leftovers
                 }
@@ -215,7 +218,7 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
                                 }
                             }
                         }
-                        console.log(usecolumns);
+                        //console.log(usecolumns);
                     }
                     else{
                         //read it in as data
@@ -228,7 +231,9 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
                     raw_data.push(dataline);
                 }
                 if(next_slice < f.size){
-                    getOneSlice(next_slice);
+                    //figure out the left overs issue
+                    var leftovers = byline[byline.length-1].length;
+                    getOneSlice(next_slice-leftovers);
                 }
                 else{
                     if(raw_data.length < 1){
@@ -240,28 +245,27 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
                     document.getElementById("csvstatus").innerHTML += f.name+"<br />";
                     if(index == num_files - 1){
                     //then you're done loading the csv files
-                        document.getElementById("csvstatus").innerHTML = "Last file completed. I have "+big_data.length+" lines from "+linecount+" total lines";
+                        document.getElementById("csvstatus").innerHTML = "I have "+big_data.length+" lines from "+linecount+" total lines";
                         if(big_data.length > 0){
                             document.getElementById("id_download_xlsx").disabled = false;
                         }
                         readyize();
                     }
                     else{
-                        openOneCSV(index+1, event);
+                        openOneCSVinSlices(index+1, event);
                     }
                 }
             };
             reader.readAsText(blob);
         }
     }
-
+    /*
     function openBatchCSV(){
         gthreshold = document.getElementById("idgthreshold").value;
         framesize = document.getElementById("idframesize").value;
 		num_files = event.target.files.length;
         openOneCSV(0,event); 
     }
-
     function openOneCSV(index, event){
         var f = event.target.files[index];
         const reader = new FileReader();
@@ -288,7 +292,7 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
         };
         reader.readAsText(f);
     }
-
+    */
     function openOneXLSX(){
         var f = event.target.files[0];
         const reader = new FileReader();
@@ -349,7 +353,7 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
                 GPSDateTime
                 }
             }
-        );
+         );
         for(var i = 0; i < sel_data.length; i++){
             //internal functions on parsing floats and ints. If NaN, assume 0. Typical for empty cells.
             
@@ -487,6 +491,7 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
         }
         document.getElementById("datastatus").innerHTML = " Data contains "+filenames.length+" logs, "+currsum+" total events.";
         document.getElementById("id_draw_button").disabled = false;
+        document.getElementById("id_draw_next").disabled = false;
         newselectfile();
     }
 
@@ -549,7 +554,7 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
         }
         var timestamp = organized_data[whichfileselected][whicheventselected][0].GPSDateTime;
         tzero = organized_data[whichfileselected][whicheventselected][xmin].time/1000;
-        tfini = organized_data[whichfileselected][whicheventselected][xmax-1].time/1000;
+        tfini = organized_data[whichfileselected][whicheventselected][xmax-2].time/1000; //edges are sometimes corrupt. use 1-away to mark axis
         //now draw the plot given plottable_data
 
         var margin = {top: 10, right: 100, bottom: 30, left: 30},
@@ -570,7 +575,7 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
             .selectAll("myPoints").data(function(d){ return d.values }).enter().append("circle")
             .attr("cx", function(d) { return x(d.time) } )
             .attr("cy", function(d) { return y(d.value) } ).attr("r", dotradius)
-            .append("svg:title").text(function(d){ return d.value});
+            .append("svg:title").text(function(d){ return ("t:"+d.time.toString()+", "+d.value.toString())});
             //.attr("stroke", "white")
         //LEGEND
         svg.append('g').append("text").attr("x",12).attr("y",10).text("File: "+filenames[whichfileselected]).style("fill","black").style("font-size",18);
