@@ -15,6 +15,7 @@
 <b>Step 5.</b> Modify the following parameters as you see fit. The G-threshold is the magnitude of the acceleration vector, and framesize
     is how many samples to capture on either side of an event that is over that G-threshold.<br>
 <p>
+<p>Fat: <input type="file" name="fileinput" id="fileinputid" onchange="fatOpen()" accept=".csv"/>Fat Open</p>
 <label for="gthreshold">G threshold:</label>
 <input type="number" id="idgthreshold" name="gthreshold" value="3" step="0.1" style="width: 50px;">
 <label for="framesize">Look back/look forward:</label>
@@ -52,7 +53,6 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
     var progressBar;
     const thelabels = ["maccl","xaccl","yaccl","zaccl"];
     const thecolors = d3.schemeSet1;
-    var curr_file;
     var num_files;
     var big_data = []; //json format, single x value (milliseconds) available to use. 2-Dimensional
     var linecount = 0;
@@ -171,6 +171,90 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
     //
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     
+    const useheader = ['time', 'xaccl', 'yaccl', 'zaccl', 'GPSDateTime'];
+    var   usecolumns = [0,0,0,0,0];
+    var   useNumber = [true, true, true, true, false];
+    var   useInteger = [true, false, false, false, false];
+
+    function fatOpen(){
+        gthreshold = document.getElementById("idgthreshold").value;
+        framesize = document.getElementById("idframesize").value;
+        num_files = event.target.files.length;
+        openOneCSVinSlices(0, event);//104857600
+    }
+
+    function openOneCSVinSlices(index, event){
+        const chunksize = 104857600; //104857600; 100MB. Chunk size must be a large enough number. too small and you won't even read a single line at a time!
+        var f = event.target.files[index];
+        var raw_data = [];
+        var leftovers = ""; //the last line of a chunk is the leftovers for the next chunk to attach to before doing more work.
+        const reader = new FileReader();
+        getOneSlice(0);
+        function getOneSlice(startbyte){
+            var next_slice = startbyte + chunksize + 1;
+            var blob = f.slice(startbyte, next_slice);
+            reader.onload = function(e){
+                var size_done = startbyte + chunksize;
+                //put the left overs from last slice in front. leftovers starts as an empty string ""
+                var text = leftovers + e.target.result;
+                var byline = text.split('\n'); //separate text by line.
+                //loop through each line.
+                var notlastslice = 1; //NOTICE: the ending is MINUS ONE because last line will be left overs intentionally
+                if(next_slice > f.size){
+                    notlastslice = 0; //changes for-loop behavior to read the last line too. otherwise it goes into the leftovers
+                }
+                for(var i = 0; i < byline.length - notlastslice; i++){ 
+                    var dataline = {};
+                    var thisline = byline[i].split(',');
+                    //step 1: if we're on line 0 of the file, this is the header. read it in and figure out where our columns are in the file.
+                    if(startbyte == 0 && i == 0){
+                        for(var q = 0; q < thisline.length; q++){
+                            for(var r = 0; r < usecolumns.length; r++){
+                                if(thisline[q] === useheader[r]){
+                                    usecolumns[r] = q;
+                                }
+                            }
+                        }
+                        console.log(usecolumns);
+                    }
+                    else{
+                        //read it in as data
+                        dataline['time'] = thisline[usecolumns[0]];
+                        dataline['xaccl'] = thisline[usecolumns[1]];
+                        dataline['yaccl'] = thisline[usecolumns[2]];
+                        dataline['zaccl'] = thisline[usecolumns[3]];
+                        dataline['GPSDateTime'] = thisline[usecolumns[4]];
+                    }
+                    raw_data.push(dataline);
+                }
+                if(next_slice < f.size){
+                    getOneSlice(next_slice);
+                }
+                else{
+                    if(raw_data.length < 1){
+                        alert(f.name +" had 0 lines or was too large!");
+                    }
+                    else{
+                        process_json(raw_data, f.name);
+                    }
+                    document.getElementById("csvstatus").innerHTML += f.name+"<br />";
+                    if(index == num_files - 1){
+                    //then you're done loading the csv files
+                        document.getElementById("csvstatus").innerHTML = "Last file completed. I have "+big_data.length+" lines from "+linecount+" total lines";
+                        if(big_data.length > 0){
+                            document.getElementById("id_download_xlsx").disabled = false;
+                        }
+                        readyize();
+                    }
+                    else{
+                        openOneCSV(index+1, event);
+                    }
+                }
+            };
+            reader.readAsText(blob);
+        }
+    }
+
     function openBatchCSV(){
         gthreshold = document.getElementById("idgthreshold").value;
         framesize = document.getElementById("idframesize").value;
@@ -201,7 +285,6 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
             else{
                 openOneCSV(index+1, event);
             }
-            curr_file++;
         };
         reader.readAsText(f);
     }
@@ -238,31 +321,38 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
     //
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+    function parseFloatNaN(passed){
+        var answer = parseFloat(passed);
+        if(isNaN(answer)) return 0;
+        return answer;
+    }
+    function parseIntNaN(passed){
+        var answer = parseInt(passed);
+        if(isNaN(answer)) return 0;
+        return answer;
+    }
+
     function process_json(data, filename){
         var step = (data.length)/10;
         var nextstep = step;
         var sel_data = data.map( //strips off the other columns that are not mentioned here, like GPS Lat/Long
             ({
-                time, xgyro, ygyro, zgyro, xaccl, yaccl, zaccl, GPSFixMode, GPSDateTime
+                time, 
+                //xgyro, ygyro, zgyro, 
+                xaccl, yaccl, zaccl, //GPSFixMode, 
+                GPSDateTime
             }) =>
             {
             return{
-                time, xgyro, ygyro, zgyro, xaccl, yaccl, zaccl, GPSFixMode, GPSDateTime
+                time, //xgyro, ygyro, zgyro, 
+                xaccl, yaccl, zaccl, //GPSFixMode, 
+                GPSDateTime
                 }
             }
         );
         for(var i = 0; i < sel_data.length; i++){
             //internal functions on parsing floats and ints. If NaN, assume 0. Typical for empty cells.
-            function parseFloatNaN(passed){
-                var answer = parseFloat(passed);
-                if(isNaN(answer)) return 0;
-                return answer;
-            }
-            function parseIntNan(passed){
-                var answer = parseInt(passed);
-                if(isNaN(answer)) return 0;
-                return answer;
-            }
+            
             //add metadata of filename, and a linecounter (unique to entire dataset in use)
             sel_data[i].filename = filename;
             sel_data[i].line = linecount;
@@ -271,9 +361,9 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
             sel_data[i].eventcounter = 0;
 			//make sure all text is entered as float/int values
 			sel_data[i].time = parseInt(sel_data[i].time);
-			sel_data[i].xgyro = parseFloatNaN(sel_data[i].xgyro);
-            sel_data[i].ygyro = parseFloatNaN(sel_data[i].ygyro);
-            sel_data[i].zgyro = parseFloatNaN(sel_data[i].zgyro);
+			//sel_data[i].xgyro = parseFloatNaN(sel_data[i].xgyro);
+            //sel_data[i].ygyro = parseFloatNaN(sel_data[i].ygyro);
+            //sel_data[i].zgyro = parseFloatNaN(sel_data[i].zgyro);
             sel_data[i].xaccl = parseFloatNaN(sel_data[i].xaccl);
             sel_data[i].yaccl = parseFloatNaN(sel_data[i].yaccl);
             sel_data[i].zaccl = parseFloatNaN(sel_data[i].zaccl);
@@ -281,7 +371,7 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
                                           sel_data[i].yaccl*sel_data[i].yaccl+
                                           sel_data[i].zaccl*sel_data[i].zaccl);
             sel_data[i].active = 0;
-            sel_data[i].GPSFixMode = parseInt(sel_data[i].GPSFixMode);
+            //sel_data[i].GPSFixMode = parseInt(sel_data[i].GPSFixMode);
             //GPSDateTime will remain as text example 20240123-204239
             //sel_data[i].GPSDate = parseIntNan(sel_data[i].GPSDateTime.slice(0,8));
             //sel_data[i].GPSTime = parseIntNan(sel_data[i].GPSDateTime.slice(9));
