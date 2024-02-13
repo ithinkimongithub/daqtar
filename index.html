@@ -342,13 +342,14 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
         var sel_data = data.map( //strips off the other columns that are not mentioned here, like GPS Lat/Long
             ({
                 time, 
-                //xgyro, ygyro, zgyro, 
+                xgyro, ygyro, zgyro, 
                 xaccl, yaccl, zaccl, //GPSFixMode, 
                 GPSDateTime
             }) =>
             {
             return{
-                time, //xgyro, ygyro, zgyro, 
+                time, 
+                xgyro, ygyro, zgyro, 
                 xaccl, yaccl, zaccl, //GPSFixMode, 
                 GPSDateTime
                 }
@@ -365,9 +366,9 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
             sel_data[i].eventcounter = 0;
 			//make sure all text is entered as float/int values
 			sel_data[i].time = parseInt(sel_data[i].time);
-			//sel_data[i].xgyro = parseFloatNaN(sel_data[i].xgyro);
-            //sel_data[i].ygyro = parseFloatNaN(sel_data[i].ygyro);
-            //sel_data[i].zgyro = parseFloatNaN(sel_data[i].zgyro);
+			sel_data[i].xgyro = parseFloatNaN(sel_data[i].xgyro);
+            sel_data[i].ygyro = parseFloatNaN(sel_data[i].ygyro);
+            sel_data[i].zgyro = parseFloatNaN(sel_data[i].zgyro);
             sel_data[i].xaccl = parseFloatNaN(sel_data[i].xaccl);
             sel_data[i].yaccl = parseFloatNaN(sel_data[i].yaccl);
             sel_data[i].zaccl = parseFloatNaN(sel_data[i].zaccl);
