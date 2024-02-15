@@ -27,6 +27,8 @@ refreshes you'll need to reload the CSV's again.<br>
 <b>Shortcut.</b> If you finished Step 7, choose the file and we can start from there.<br>
 <p>XLSX File: <input type="file" name="xlsxinput" id="xlsxinputid" onchange="openOneXLSX()" accept=".xlsx"/></p>
 <hr>
+<p>Match Event File: <input type="file" id="knowneventinput" onchange="openOneEventXLSX()" accept=".xlsx"/></p>
+<hr>
 <p>CSV Info:<a id="csvstatus"></a></p>
 <p>Log Info:<a id="datastatus"></a></p>
 <hr>
@@ -65,6 +67,7 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
     var fileeventlist = [];
     var excelfilename = "";
     var whichfileselected = 0;
+    var known_event_data = [];
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //
@@ -304,6 +307,7 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
             var firstWorksheet = inputWorkbook.Sheets[firstSheetname];
             big_data = XLSX.utils.sheet_to_json(firstWorksheet, {defval:"0"});
             readyize();
+            console.log(organized_data);
         }
         reader.readAsBinaryString(f);
     }
@@ -313,6 +317,28 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
 	    const workbook  = XLSX.utils.book_new();
 	    XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
 	    XLSX.writeFile(workbook, "output.xlsx", {compression:true});
+    }
+
+    function downloadMatchesXLSX() {
+        const worksheet = XLSX.utils.json_to_sheet(known_event_data);		
+	    const workbook  = XLSX.utils.book_new();
+	    XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
+	    XLSX.writeFile(workbook, "output.xlsx", {compression:true});
+    }
+
+    function openOneEventXLSX(){
+        var f = event.target.files[0];
+        const reader = new FileReader();
+        excelfilename = f.name;
+        reader.onload = function(e){
+            var binaryString = e.target.result;
+            var inputWorkbook = XLSX.read(binaryString, {type: 'binary'});
+            var firstSheetname = inputWorkbook.SheetNames[0];
+            var firstWorksheet = inputWorkbook.Sheets[firstSheetname];
+            known_event_data = XLSX.utils.sheet_to_json(firstWorksheet, {defval:"0"});
+            matchevents();
+        }
+        reader.readAsBinaryString(f);
     }
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -494,6 +520,130 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
         document.getElementById("id_draw_button").disabled = false;
         document.getElementById("id_draw_next").disabled = false;
         newselectfile();
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //
+    // MATCH EVENTS
+    //
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    function getTimeDiff(t1, t2){ //year, month, day, hours (24), minutes (60)
+        //returns true/false if inside the programmed threshold of 10 minutes. doesn't compute difference itself.
+        //take difference of time, then absolute value, then see if less than 10.
+        var timediff = {};
+        var time1 = {};
+        var time2 = {};
+        time1.year = t1.year;
+        time1.month = t1.month;
+        time1.day = t1.day;
+        time1.hour = t1.hour;
+        time1.minute = t1.minute;
+        time2.year = t2.year;
+        time2.month = t2.month;
+        time2.day = t2.day;
+        time2.hour = t2.hour;
+        time2.minute = t2.minute;
+        timediff.minute = time1.minute - time2.minute; //34 - 40 --> add 60 to (borrow one)
+        if(timediff.minute < 0){
+            timediff.minute += 60;
+            time1.hour -= 1;
+        }
+        timediff.hour = time1.hour - time2.hour;
+        if(timediff.hour < 0){
+            timediff.hour += 24;
+            time1.day -= 1;
+        }
+        timediff.day = time1.day - time2.day;
+        if(timediff.day < 0){
+            timediff.day += 31; //fixed for january :P !!
+            time1.month -= 1; 
+        }
+        timediff.month = time1.month - time2.month;
+        if(timediff.month < 0){
+            return false;
+        }
+        return (timediff.month == 0 && timediff.day == 0 && timediff.hour == 0 && timediff.minute < 3);
+    }
+    function matchevents(){
+        //known_event_data is filled from the open event xlsx, with headings:
+        // year XXXX, month XX, day XX, hour ZZ, minute ZZ, weight XXXX, height L/M/H, config A/L
+        // only need to use the month/day/time to make matches, and provide a 1-1 match of the biggest event within 3 minutes
+        // of the known event time.
+        //organized data has structure of events start at index 1, and index 0 is the "all data" event
+        //console.log(known_event_data);
+        var filehits= new Array(50);
+        var eventhits= new Array(50);
+        for(var iknown = 0; iknown < known_event_data.length; iknown++){
+            //var best_match_file = -1;
+            //var best_match_event = -1;
+            var time2 = {};
+            time2.year = parseIntNaN(known_event_data[iknown].year);
+            time2.month = parseIntNaN(known_event_data[iknown].month);
+            time2.day = parseIntNaN(known_event_data[iknown].day);
+            time2.hour = parseIntNaN(known_event_data[iknown].hour);
+            time2.minute = parseIntNaN(known_event_data[iknown].minute);
+            var esensor = parseIntNaN(known_event_data[iknown].sensor);
+            //console.log(iknown,time2);
+            var maxg = 0;
+            var time1 = {};
+            time1.month = 0;
+            time1.year = 0;
+            time1.day = 0;
+            time1.hour = 0;
+            time1.minute = 0;
+            var csensor = 0;
+            for(var ifile = 0; ifile < organized_data.length; ifile++){
+                for(var ievent = 1; ievent < organized_data[ifile].length; ievent++){
+                    //see if time is close first, use time at middle of event:
+                    var eventmiddle = Math.floor(organized_data[ifile][ievent].length/2);
+                    if(eventmiddle > 10){ //only if there is at least 20 samples in this event
+                        csensor = parseIntNaN(organized_data[ifile][ievent][eventmiddle].filename.slice(3,7));
+                        var fname = organized_data[ifile][ievent][eventmiddle].filename;
+                        time1.year = parseIntNaN(organized_data[ifile][ievent][eventmiddle].GPSDateTime.slice(0,4));
+                        time1.month = parseIntNaN(organized_data[ifile][ievent][eventmiddle].GPSDateTime.slice(4,6));
+                        time1.day = parseIntNaN(organized_data[ifile][ievent][eventmiddle].GPSDateTime.slice(6,8));
+                        time1.hour = parseIntNaN(organized_data[ifile][ievent][eventmiddle].GPSDateTime.slice(9,11));
+                        time1.minute = parseIntNaN(organized_data[ifile][ievent][eventmiddle].GPSDateTime.slice(11,13));
+                        if(csensor == esensor){
+                            if(getTimeDiff(time1,time2) || getTimeDiff(time2,time1)){
+                                var used = false;
+                                var datetime = "";
+                                for(var isample = 0; isample < organized_data[ifile][ievent].length; isample++){
+                                    var thisg = organized_data[ifile][ievent][isample].maccl;
+                                    if(thisg > maxg){
+                                        maxg = thisg;
+                                        used = true;
+                                        datetime = organized_data[ifile][ievent][isample].GPSDateTime;
+                                    }
+                                }
+                                if(used){
+                                    known_event_data[iknown].maxg = maxg;
+                                    known_event_data[iknown].csensor = csensor;
+                                    known_event_data[iknown].filename = fname;
+                                    known_event_data[iknown].event_num = ievent;
+                                    known_event_data[iknown].GPSDateTime = datetime;
+                                    //if(csensor != esensor){
+                                    //    known_event_data[iknown].sensormatch = "false";
+                                    //}
+                                    //else{
+                                    //    known_event_data[iknown].sensormatch = "";
+                                    //}
+                                }
+                            }
+                        }
+                    } 
+                }
+            }
+            if(maxg < 1){
+                known_event_data[iknown].maxg = "NA";
+                known_event_data[iknown].csensor = "NA";
+                known_event_data[iknown].filename = "NA";
+                known_event_data[iknown].event_num = "NA";
+                known_event_data[iknown].GPSDateTime = "NA";
+                //known_event_data[iknown].sensormatch = "";
+            }
+        }
+        downloadMatchesXLSX();
     }
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
