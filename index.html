@@ -386,9 +386,9 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
             
             //add metadata of filename, and a linecounter (unique to entire dataset in use)
             sel_data[i].filename = filename;
-            sel_data[i].line = linecount;
+            //sel_data[i].line = linecount;
             linecount++;
-            sel_data[i].decay = 0;
+            //sel_data[i].decay = 0;
             sel_data[i].eventcounter = 0;
 			//make sure all text is entered as float/int values
 			sel_data[i].time = parseInt(sel_data[i].time);
@@ -417,7 +417,7 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
             if(sel_data[i].maccl > threshold){
                 sel_data[i].active = 1;
                 decay = lookforward; //whenever other threshold, reset decay counter to the top value.
-                sel_data[i].decay = decay;
+                //sel_data[i].decay = decay;
                 if(syson == 0){ 
                     //CONDITION: if accel is over threshold and system was idle, go active and also look backward and set active
                     //to reduce overlap, start at the neighboring line just before: if that one is active, halt the lookback.
@@ -444,7 +444,7 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
                     decay--;
                     sel_data[i].active = 1;
                     sel_data[i].eventcounter = curr_event;
-                    sel_data[i].decay = decay;
+                    //sel_data[i].decay = decay;
                     if(decay < 1){
                         syson = 0;
                     }
@@ -457,6 +457,7 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
             if(sel_data[i].active == 1 || ignorethreshold){
                 var activeitem = {};
                 activeitem = sel_data[i];
+                activeitem.identifier = activeitem.filename + "-" + activeitem.eventcounter.toString();
                 big_data.push(activeitem);
             }
         }
@@ -621,6 +622,7 @@ Dot Radius:<input type="number" id="idradius" name="nameymax" value="2" step="1"
                                     known_event_data[iknown].csensor = csensor;
                                     known_event_data[iknown].filename = fname;
                                     known_event_data[iknown].event_num = ievent;
+                                    known_event_data[iknown].identifier = fname+"-"+ievent.toString();
                                     known_event_data[iknown].GPSDateTime = datetime;
                                     //if(csensor != esensor){
                                     //    known_event_data[iknown].sensormatch = "false";
